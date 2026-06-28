@@ -9,96 +9,148 @@
 >
 > **Language is the interface. The player is reality itself.**
 
-This repo is the first playable slice of that idea — the iconic opening moment,
-made real and runnable, with an engine architecture designed to grow toward the
-full vision.
+Type a sentence and watch reality assemble itself — light, stars, a living
+world, weather, life, civilizations that evolve through the ages and
+eventually *look back at you through the console*. Zoom from quantum foam out
+to the observable universe. Everything is editable; nothing is permanent.
+
+![Genesis](assets/01-genesis.png)
 
 ## Run it
 
-No build step. Just open the file:
+No build step, no dependencies. Just open the file:
 
 ```bash
-# from the repo root
 open index.html        # macOS
 xdg-open index.html    # Linux
 # or drag index.html into any browser
 ```
 
-Then type. Start with:
+For the optional AI interpreter (open-ended language), serve it over http so
+the browser can reach the API:
+
+```bash
+python3 -m http.server 8080   # then visit http://localhost:8080
+```
+
+Then type your first words. The classic:
 
 ```
 let there be light
 ```
 
-…and watch reality assemble itself.
+## What you can say
 
-## Commands this slice understands
+The interpreter understands a deep command set out of the box (no AI key
+required). A taste:
 
-It uses a **deterministic keyword interpreter** (no AI key required), so the
-opening feels real today:
-
-| Type something like… | What happens |
+| Category | Examples |
 |---|---|
-| `let there be light` | The genesis sequence: light → stars → a sun → a world |
-| `create an ocean planet` | Climate shifts to a calm water world |
-| `start an ice age` | Snow spreads, oceans freeze, civilizations falter |
-| `make it volcanic` | Black sand, obsidian peaks, lava |
-| `increase gravity to 2G` | Gravity changes; the world adjusts |
-| `remove gravity` | Matter drifts free |
-| `add three moons` | Moons emerge and begin orbiting |
-| `make the oceans purple` | Ocean hue changes |
-| `double the size of the sun` | The star swells; the climate reacts |
-| `create intelligent life` | Life evolves… and eventually looks back at *you* |
-| `accelerate time` / `pause` | Time scales up to millions of years/sec, or freezes |
-| `zoom out` / `zoom in` | Step through Quantum → … → Universe |
-| `undo` · `save` · `help` | Step back · export the universe · list commands |
+| **Genesis** | `let there be light` |
+| **Worlds** | `create an ocean planet` · `make it volcanic` · `start an ice age` · `desert` · `jungle` · `barren` |
+| **Physics** | `increase gravity to 2G` · `remove gravity` · `double the size of the sun` |
+| **Sky** | `add three moons` · `add rings` · `make the oceans purple` · `make it rain` · `darker` |
+| **Life** | `create life` · `create intelligent life` · `start a war` · `cause a mass extinction` |
+| **Time** | `accelerate time` · `advance one million years` · `pause` · `resume` |
+| **Zoom** | `zoom out` · `go to galaxy` · `view surface` · `zoom to atom` (or scroll the wheel) |
+| **Meta** | `undo` · `redo` · `save` · `load` · `reset` · `help` |
 
-The UI fades while you observe and returns when you act — the world is the HUD.
+Pronouns work: after `create an earth-like planet`, you can say `make it
+colder` and the engine knows what *it* is. The UI fades while you observe and
+returns the moment you act.
+
+## The zoom ladder
+
+Scroll, or say `zoom to <level>`. Every level is its own rendered scene:
+
+```
+Quantum · Atom · Object · Room · Building · Street · City · Country
+        · Surface · Planet · Solar System · Galaxy · Universe
+```
+
+![Galaxy](assets/07-galaxy.png)
+![Surface](assets/09-surface.png)
+
+## Emergence: they discover you
+
+Seed life, then `accelerate time`. Cells multiply, complex organisms emerge, a
+civilization rises and climbs the tech tree — stone age to post-singularity.
+When it reaches the information age it builds radio telescopes, looks outward,
+and a transmission appears on *your* console:
+
+```
+  Incoming transmission on the console:
+     "...is someone there?"
+     "We have always wondered if we were created."
+```
 
 ## Architecture
 
-The slice mirrors the five cooperating systems from the design doc, scaled into
-one file (`index.html`). Each maps to a clean upgrade path:
+The engine mirrors the five cooperating systems from the design doc. Each is a
+small, focused module under `src/`, wired together by `game.js`:
 
 ```
-sentence ─▶ INTERPRETER ─▶ intent {verb, params} ─▶ EXECUTE ─▶ WORLD STATE
-                                                                  │
-                                          SIM LAYER (physics/time)│ per frame
-                                                                  ▼
-                                                      RENDERER (progressive)
+sentence ─▶ interpreter ─▶ intent {verb, params} ─▶ game.exec ─▶ World state
+                                                                    │
+                                            sim.tick (physics/time/ │ per frame
+                                             life/civ/orbits)        ▼
+                                                            render.draw (scenes)
 ```
 
-| System | Today (this slice) | "Ultra code" upgrade |
+| File | System | Role |
 |---|---|---|
-| **Interpreter** | keyword → `intent` object | swap in an LLM that emits the *same* `intent` JSON → true open-ended language |
-| **World State** | single `World` object + history (undo) + `it` memory | persistent DB, branching timelines |
-| **Procedural gen** | canvas blobs, particles, orbits | terrain/material/creature generators driven by AI descriptions |
-| **Sim layer** | time scale, gravity, climate, orbits | climate/ecosystem/evolution/economy models |
-| **Renderer** | staged 2D canvas build | streamed 3D LOD assets (WebGL/WebGPU) |
+| `src/util.js` | — | seeded RNG, color, value-noise, math |
+| `src/state.js` | World State | single source of truth, undo/redo history, pronoun memory, save/load |
+| `src/interpreter.js` | Interpreter | sentence → `intent`; **optional LLM adapter emits the same intent shape** |
+| `src/sim.js` | Simulation | time, orbits, life evolution, civilization tiers, events |
+| `src/render.js` | Renderer | camera + per-scale scenes; procedural **spherical** planets via orthographic column sampling |
+| `src/audio.js` | — | generative Web Audio ambient + event tones (no asset files) |
+| `src/companion.js` | Companion | calm OS-style readouts and the live status panel |
+| `src/game.js` | — | genesis sequence, command dispatch, input/history, main loop |
 
-The key design bet (same as the doc): **the AI never renders pixels.** It
-interprets and describes; a deterministic engine builds. That keeps things
-responsive and lets the creative layer be swapped or upgraded independently.
+The key design bet: **the AI never renders pixels.** It interprets and
+describes; a deterministic engine builds. That keeps it responsive and lets the
+creative layer be upgraded independently.
+
+### The "ultra code" upgrade path
+
+The interpreter turns a sentence into an `intent` object. Swap the keyword
+parser for an LLM that emits the *same* JSON and you instantly get open-ended
+language — with **zero engine changes**. That adapter already exists:
+
+```
+/key sk-ant-...     # enable the AI interpreter (key stored locally only)
+/key off            # disable
+```
+
+With a key set, free-form sentences route through Claude, which returns an
+array of intents the engine runs. Without one, the deterministic parser handles
+everything above.
+
+## Testing
+
+A headless-browser smoke test drives the game in the pre-installed Chromium,
+captures the screenshots in `assets/`, and fails on any console error:
+
+```bash
+node test/smoke.mjs      # requires playwright + a chromium build
+```
 
 ## The honest roadmap
 
-**Real now**
-- Void + prompt + "language is the only interface" UX
-- Progressive, animated genesis
-- Deterministic intent engine: gravity, moons, climate, color, time, zoom, undo, save
+**Done**
+- Void → prompt → progressive genesis
+- Procedural 3D-shaded planets, rings, moons, atmosphere, day/night, weather
+- Full zoom ladder (quantum → universe), each a distinct scene
+- Deep deterministic interpreter + pronoun memory + LLM seam
+- Simulation: time scaling, gravity, climate, life, civilizations, first contact
+- Generative ambient audio, undo/redo, save/load, command history
 
-**Next (with an LLM as the interpreter)**
-- Open-ended natural language → structured edits
-- Conversational memory ("make *it* darker")
-- Scripted-but-emergent civilizations that "discover the player"
+**Next**
+- Branching timelines and a universe browser
+- Multiplayer shared universes
+- 3D (WebGL/WebGPU) renderer behind the same scene interface
 
-**Research-tier (be realistic)**
+**Research-tier (kept honest)**
 - Real-time arbitrary 3D geometry from text
-- Genuinely emergent (not faked) civilization history
-- Live shared multiplayer universes
-
-## Status
-
-Vertical slice. One file, no dependencies. The point is to prove the *feeling* —
-that a sentence can write reality into existence — and to leave clean seams where
-the AI and 3D layers plug in later.
+- Genuinely emergent (not scripted) civilization history
