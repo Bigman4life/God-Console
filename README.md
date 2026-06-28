@@ -130,8 +130,8 @@ sentence ─▶ interpreter ─▶ intent {verb, params} ─▶ game.exec ─▶
 | `src/state.js` | World State | single source of truth, undo/redo history, pronoun memory, save/load |
 | `src/interpreter.js` | Interpreter | sentence → `intent`; **optional LLM adapter emits the same intent shape** |
 | `src/sim.js` | Simulation | time, orbits, life evolution, civilization tiers, events |
-| `src/render.js` | Renderer | low-res **pixel backbuffer** (nearest-neighbour upscale); pixel-3D space scenes; procedural **spherical** planets via orthographic column sampling |
-| `src/surface.js` | Renderer (God Eye) | top-down 2D biome **tilemap** generated from planet seed/climate; baked static layers + live water/fire/units; surface god-powers |
+| `src/render.js` | Renderer | low-res **pixel backbuffer** (nearest-neighbour upscale); **software-rendered planet** (per-pixel sphere sampling + flat *banded* lighting over a posterized texture — crisp pixel art, no blurry gradients); pixel-3D space |
+| `src/surface.js` | Renderer (God Eye) | top-down 2D biome **tilemap** drawn **directly** at integer tile sizes (no downscale) with a zoomable camera; detailed tree/mountain/village sprites; live water/fire/units; surface god-powers |
 | `src/audio.js` | — | generative Web Audio ambient + event tones (no asset files) |
 | `src/companion.js` | Companion | calm OS-style readouts and the live status panel |
 | `src/ui.js` | — | autocomplete suggestion bar + saved-universe browser panel |

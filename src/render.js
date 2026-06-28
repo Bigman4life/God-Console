@@ -9,7 +9,7 @@
   // viewCanvas = on-screen; buffer = low-res pixel backbuffer (everything
   // draws into it, then we upscale with nearest-neighbour for the pixel look).
   let viewCanvas, vctx, buffer, ctx, W, H, CX, CY, VW, VH, DPR = 1;
-  const BUF_H = 380;            // logical pixel-art vertical resolution
+  const BUF_H = 440;            // logical pixel-art vertical resolution
   const particles = [];
   let bgStars = [];
   let nebula = [];
@@ -246,177 +246,166 @@
     };
   }
 
+  // Vibrant, posterized planet texture stored as a raw RGB buffer (+cloud alpha).
+  // Flat color bands + 1-bit dithering = clean pixel-art surface.
   function buildGlobeTexture(p) {
     const key = [p.seed, p.climate, p.oceanColor, p.landColor, p.iceColor, p.continents].join('|');
-    if (p._texKey === key && p._tex) return;
+    if (p._texKey === key && p._texData) return;
     p._texKey = key;
-    const TW = 360, TH = 180;
-    const tex = document.createElement('canvas'); tex.width = TW; tex.height = TH;
-    const tctx = tex.getContext('2d');
-    const img = tctx.createImageData(TW, TH);
+    const TW = 320, TH = 160; p._texW = TW; p._texH = TH;
+    const td = new Uint8ClampedArray(TW * TH * 3);
+    const cd = new Uint8ClampedArray(TW * TH);
     const rng = U.makeRng(p.seed);
-    const n1 = noise2D(rng, 8, 5), n2 = noise2D(rng, 16, 10), n3 = noise2D(rng, 32, 20);
+    const n1 = noise2D(rng, 7, 5), n2 = noise2D(rng, 15, 10), n3 = noise2D(rng, 31, 20);
+    const m1 = noise2D(rng, 6, 4), m2 = noise2D(rng, 18, 11);
+    const cl1 = noise2D(rng, 9, 6), cl2 = noise2D(rng, 20, 12);
     const ocean = U.hexRgb(p.oceanColor), land = U.hexRgb(p.landColor), ice = U.hexRgb(p.iceColor);
-    const landHi = U.shade(land, 0.25), landLo = U.shade(land, -0.25);
-    const seaLevel = p.climate === 'ocean' ? 0.62 : p.climate === 'desert' ? 0.38 : 0.5;
+    // posterized palette
+    const deep = U.shade(ocean, -0.4), water = ocean, shallow = U.mix(ocean, [130, 205, 235], 0.55);
+    const beach = p.climate === 'volcanic' ? [60, 52, 56] : [222, 205, 140];
+    const grass = U.shade(land, 0.08), grassDry = U.mix(land, [170, 160, 80], 0.5), forest = U.shade(land, -0.34);
+    const rock = [96, 92, 104], rockHi = [128, 124, 136];
+    const desertC = [206, 178, 110], lava = [232, 96, 28], ash = [58, 52, 58];
+    const sea = p.climate === 'ocean' ? 0.6 : p.climate === 'desert' ? 0.4 : 0.48;
+    const dither = (x, y, edge) => ((x + y) & 1) === 0 ? edge : 0; // 1-bit checker
     for (let y = 0; y < TH; y++) {
-      const lat = y / TH;                 // 0..1 (pole to pole)
-      const polar = Math.abs(lat - 0.5) * 2; // 0 eq -> 1 pole
+      const lat = y / TH, polar = Math.abs(lat - 0.5) * 2;
       for (let x = 0; x < TW; x++) {
         const u = x / TW;
-        let h = n1(u, lat) * 0.6 + n2(u, lat) * 0.3 + n3(u, lat) * 0.1;
-        h += (0.5 - polar) * 0.05;
-        let col;
-        if (h < seaLevel) {
-          const d = U.invlerp(0, seaLevel, h);
-          col = U.mix(U.shade(ocean, -0.3), ocean, d);
-        } else {
-          const e = U.invlerp(seaLevel, 1, h);
-          col = U.mix(landLo, landHi, e);
-        }
-        // ice caps near poles (climate dependent)
-        const iceLine = p.climate === 'ice' ? 0.25 : p.climate === 'volcanic' ? 1.1 : 0.78;
-        if (polar > iceLine) col = U.mix(col, ice, U.clamp((polar - iceLine) / (1 - iceLine), 0, 1));
-        const idx = (y * TW + x) * 4;
-        img.data[idx] = col[0]; img.data[idx + 1] = col[1]; img.data[idx + 2] = col[2]; img.data[idx + 3] = 255;
-      }
-    }
-    tctx.putImageData(img, 0, 0);
-    p._tex = wrapPad(tex, TW, TH); p._texW = TW; p._texH = TH;
-
-    // cloud texture (alpha)
-    const cl = document.createElement('canvas'); cl.width = TW; cl.height = TH;
-    const clx = cl.getContext('2d'); const cimg = clx.createImageData(TW, TH);
-    const c1 = noise2D(rng, 10, 6), c2 = noise2D(rng, 22, 12);
-    for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) {
-      const v = c1(x / TW, y / TH) * 0.6 + c2(x / TW, y / TH) * 0.4;
-      const a = U.clamp((v - 0.45) * 3, 0, 1) * 255;
-      const idx = (y * TW + x) * 4;
-      cimg.data[idx] = cimg.data[idx + 1] = cimg.data[idx + 2] = 255; cimg.data[idx + 3] = a;
-    }
-    clx.putImageData(cimg, 0, 0); p._cloudTex = wrapPad(cl, TW, TH);
-  }
-
-  // pad a tileable texture with a copy of its first column at the right edge,
-  // so orthographic sampling at u=1 wraps continuously to u=0 (no seam).
-  function wrapPad(src, TW, TH) {
-    const pad = document.createElement('canvas'); pad.width = TW + 1; pad.height = TH;
-    const pc = pad.getContext('2d');
-    pc.drawImage(src, 0, 0);
-    pc.drawImage(src, 0, 0, 1, TH, TW, 0, 1, TH);
-    return pad;
-  }
-
-  // light direction (sun) on screen for the planet/system views
-  function sunDir() {
-    return { x: -0.72, y: -0.45 }; // upper-left light
-  }
-
-  function drawGlobe(cx, cy, r, p, opt) {
-    opt = opt || {};
-    buildGlobeTexture(p);
-    const tex = p._tex, cloud = p._cloudTex, TW = p._texW, TH = p._texH;
-    const spin = p.spin || 0;
-    const tilt = p.axialTilt || 0;
-    const cols = Math.max(60, Math.floor(r * 2));
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, U.TAU); ctx.clip();
-
-    // rotate the clip space for axial tilt
-    ctx.translate(cx, cy); ctx.rotate(tilt); ctx.translate(-cx, -cy);
-
-    for (let i = 0; i <= cols; i++) {
-      const sx = -r + (i / cols) * 2 * r;     // screen offset -r..r
-      const f = U.clamp(sx / r, -1, 1);
-      const lon = Math.asin(f);                // orthographic longitude
-      let texU = (spin + lon) / U.TAU;
-      texU = ((texU % 1) + 1) % 1;
-      const chord = Math.sqrt(Math.max(0, r * r - sx * sx));
-      const colW = (2 * r) / cols + 1;
-      ctx.drawImage(tex, texU * TW, 0, 1, TH, cx + sx, cy - chord, colW, chord * 2);
-    }
-    // clouds layer (slower spin)
-    if (p.cloudiness > 0.02) {
-      ctx.globalAlpha = U.clamp(p.cloudiness, 0, 1) * 0.8;
-      const cspin = spin * 0.6;
-      for (let i = 0; i <= cols; i++) {
-        const sx = -r + (i / cols) * 2 * r;
-        const f = U.clamp(sx / r, -1, 1);
-        const lon = Math.asin(f);
-        let texU = (cspin + lon) / U.TAU; texU = ((texU % 1) + 1) % 1;
-        const chord = Math.sqrt(Math.max(0, r * r - sx * sx));
-        const colW = (2 * r) / cols + 1;
-        ctx.drawImage(cloud, texU * TW, 0, 1, TH, cx + sx, cy - chord, colW, chord * 2);
-      }
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-
-    // limb darkening + day/night terminator
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, U.TAU); ctx.clip();
-    const ld = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
-    ld.addColorStop(0, 'rgba(0,0,0,0)'); ld.addColorStop(1, 'rgba(0,0,12,0.55)');
-    ctx.fillStyle = ld; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-    const L = sunDir();
-    const tg = ctx.createLinearGradient(cx + L.x * r, cy + L.y * r, cx - L.x * r, cy - L.y * r);
-    tg.addColorStop(0, 'rgba(255,250,235,0.12)');
-    tg.addColorStop(0.5, 'rgba(0,0,0,0)');
-    tg.addColorStop(0.72, 'rgba(0,0,14,0.45)');
-    tg.addColorStop(1, 'rgba(0,0,14,0.78)');
-    ctx.fillStyle = tg; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-    // night lights for advanced civs
-    if (p.civ && p.civ.present && p.civ.level >= 4) {
-      ctx.globalCompositeOperation = 'lighter';
-      const rng = U.makeRng(p.seed ^ 0x55);
-      const lights = Math.min(120, p.civ.level * 18);
-      for (let i = 0; i < lights; i++) {
-        const a = rng.range(0, U.TAU), rr = rng.range(0, r * 0.95);
-        const lx = cx + Math.cos(a) * rr, ly = cy + Math.sin(a) * rr;
-        // only on night side
-        const ndot = (lx - cx) * -L.x + (ly - cy) * -L.y;
-        if (ndot > 0) { ctx.fillStyle = 'rgba(255,220,150,0.5)'; ctx.fillRect(lx, ly, 1.4, 1.4); }
-      }
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    // aurora near the poles
-    if (p.aurora) {
-      ctx.globalCompositeOperation = 'lighter';
-      const tt = (R._t || 0);
-      for (const pole of [-1, 1]) {
-        for (let b = 0; b < 3; b++) {
-          ctx.strokeStyle = U.rgbStr(U.hsl(120 + b * 30 + Math.sin(tt + b) * 20, 0.8, 0.6), 0.16);
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          for (let x = -r; x <= r; x += 6) {
-            const yy = cy + pole * r * (0.62 + b * 0.07) + Math.sin(x * 0.05 + tt * 2 + b) * 6;
-            if (x === -r) ctx.moveTo(cx + x, yy); else ctx.lineTo(cx + x, yy);
+        let h = n1(u, lat) * 0.6 + n2(u, lat) * 0.3 + n3(u, lat) * 0.1 + (0.5 - polar) * 0.04;
+        const moi = m1(u, lat) * 0.6 + m2(u, lat) * 0.4;
+        let c;
+        if (h < sea - 0.10) c = deep;
+        else if (h < sea - 0.02) c = water;
+        else if (h < sea) c = shallow;
+        else if (h < sea + 0.03) c = beach;
+        else if (h > 0.78) c = polar > 0.5 || p.climate === 'ice' ? ice : (((x + y) & 1) ? rockHi : rock);
+        else if (h > 0.66) c = ((x + y) & 1) ? rockHi : rock;
+        else {
+          if (p.climate === 'desert') c = ((x * 2 + y) % 3 === 0) ? U.shade(desertC, -0.08) : desertC;
+          else if (p.climate === 'volcanic') c = (moi < 0.4 && h < sea + 0.07) ? lava : ash;
+          else {
+            const base = moi > 0.55 ? forest : (moi < 0.33 ? grassDry : grass);
+            c = ((x + y) & 1) && moi > 0.5 ? U.shade(base, -0.08) : base;
           }
-          ctx.stroke();
+        }
+        // ice caps
+        const iceLine = p.climate === 'ice' ? 0.2 : p.climate === 'volcanic' ? 1.1 : 0.8;
+        if (polar > iceLine && h >= sea) {
+          const tk = U.clamp((polar - iceLine) / (1 - iceLine), 0, 1);
+          if (tk > 0.5 || ((x + y) & 1)) c = ice;
+        }
+        const i = (y * TW + x) * 3; td[i] = c[0]; td[i + 1] = c[1]; td[i + 2] = c[2];
+        // clouds: posterized puffs
+        const cv = cl1(u + 0.3, lat) * 0.6 + cl2(u + 0.3, lat) * 0.4;
+        cd[y * TW + x] = cv > 0.56 ? (cv > 0.66 ? 235 : 150) : 0;
+      }
+    }
+    p._texData = td; p._cloudData = cd;
+  }
+
+  // software-rendered sphere: per-pixel sample + quantized (banded) lighting.
+  // geometry (mask/uv/light) is cached per (r,tilt); only texture sampling runs each frame.
+  const LIGHT = { x: -0.60, y: -0.50, z: 0.62 };
+  let globeCanvas, globeCtx, globeImg, geo = { r: -1, tilt: 999 };
+  function buildGeo(r, tilt) {
+    const D = r * 2 + 2;
+    geo.D = D; geo.r = r; geo.tilt = tilt;
+    geo.mask = new Uint8Array(D * D);
+    geo.bu = new Float32Array(D * D);   // base longitude fraction (no spin)
+    geo.vrow = new Int16Array(D * D);   // texture row
+    geo.lm = new Float32Array(D * D);   // light multiplier (banded)
+    geo.rim = new Uint8Array(D * D);    // bright limb on lit side
+    const ct = Math.cos(tilt), st = Math.sin(tilt);
+    for (let py = 0; py < D; py++) {
+      for (let px = 0; px < D; px++) {
+        const dx = (px - r) / r, dy = (py - r) / r, d2 = dx * dx + dy * dy;
+        const gi = py * D + px;
+        if (d2 > 1) { geo.mask[gi] = 0; continue; }
+        geo.mask[gi] = 1;
+        const nz = Math.sqrt(1 - d2);
+        // tilt rotate about x
+        const yT = dy * ct - nz * st, zT = dy * st + nz * ct;
+        const lat = Math.asin(U.clamp(yT, -1, 1));
+        const lon = Math.atan2(dx, zT);
+        geo.bu[gi] = lon / U.TAU;
+        geo.vrow[gi] = U.clamp(Math.round((lat / Math.PI + 0.5) * (160 - 1)), 0, 159);
+        // lighting from screen-space normal
+        const d = dx * LIGHT.x + dy * LIGHT.y + nz * LIGHT.z;
+        let lm = d > 0.55 ? 1.18 : d > 0.16 ? 1.0 : d > -0.02 ? 0.72 : d > -0.26 ? 0.46 : 0.3;
+        if (d2 > 0.9) lm *= 0.82;                 // dark limb edge
+        geo.lm[gi] = lm;
+        geo.rim[gi] = (d2 > 0.82 && d > 0.1) ? 1 : 0;
+      }
+    }
+  }
+  function drawGlobe(cx, cy, r, p) {
+    r = Math.round(r); if (r < 2) return;
+    buildGlobeTexture(p);
+    const TW = p._texW, TH = p._texH, td = p._texData, cd = p._cloudData;
+    const tilt = p.axialTilt || 0;
+    if (geo.r !== r || Math.abs(geo.tilt - tilt) > 0.001) buildGeo(r, tilt);
+    const D = geo.D;
+    if (!globeCanvas) { globeCanvas = document.createElement('canvas'); globeCtx = globeCanvas.getContext('2d'); }
+    if (globeCanvas.width !== D) { globeCanvas.width = D; globeCanvas.height = D; globeImg = globeCtx.createImageData(D, D); }
+    const out = globeImg.data;
+    const spinU = (p.spin || 0) / U.TAU;
+    const cspinU = (p.spin || 0) * 0.6 / U.TAU;
+    const clouds = p.cloudiness > 0.02, cAmt = U.clamp(p.cloudiness, 0, 1);
+    for (let gi = 0, oi = 0; gi < D * D; gi++, oi += 4) {
+      if (!geo.mask[gi]) { out[oi + 3] = 0; continue; }
+      const row = geo.vrow[gi];
+      let u = geo.bu[gi] + spinU; u -= Math.floor(u);
+      const tx = (u * TW) | 0;
+      const ti = (row * TW + tx) * 3;
+      const lm = geo.lm[gi];
+      let rC = td[ti] * lm, gC = td[ti + 1] * lm, bC = td[ti + 2] * lm;
+      if (clouds) {
+        let cu = geo.bu[gi] + cspinU; cu -= Math.floor(cu);
+        const ca = cd[row * TW + ((cu * TW) | 0)];
+        if (ca) { const a = (ca / 255) * cAmt; const cl = 245 * lm; rC = rC + (cl - rC) * a; gC = gC + (cl - gC) * a; bC = bC + (cl - bC) * a; }
+      }
+      if (geo.rim[gi]) { rC += 30; gC += 50; bC += 70; }      // bright lit limb
+      out[oi] = rC; out[oi + 1] = gC; out[oi + 2] = bC; out[oi + 3] = 255;
+    }
+    globeCtx.putImageData(globeImg, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(globeCanvas, Math.round(cx - r), Math.round(cy - r));
+
+    // crisp atmosphere: concentric flat rings (no blurry gradient)
+    if (p.atmosphere > 0.05) {
+      const atmC = U.mix([150, 215, 255], U.hexRgb(p.oceanColor), 0.12);
+      ctx.strokeStyle = U.rgbStr(atmC, 0.85 * p.atmosphere); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 1, 0, U.TAU); ctx.stroke();
+      ctx.strokeStyle = U.rgbStr(atmC, 0.4 * p.atmosphere); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, U.TAU); ctx.stroke();
+      ctx.strokeStyle = U.rgbStr(atmC, 0.16 * p.atmosphere); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 5, 0, U.TAU); ctx.stroke();
+    }
+    // night-side city lights (pixels)
+    if (p.civ && p.civ.present && p.civ.level >= 4) {
+      const rng = U.makeRng(p.seed ^ 0x55), lights = Math.min(140, p.civ.level * 20);
+      for (let i = 0; i < lights; i++) {
+        const a = rng.range(0, U.TAU), rr = rng.range(0, r * 0.92);
+        const lx = cx + Math.cos(a) * rr, ly = cy + Math.sin(a) * rr;
+        if ((lx - cx) * -LIGHT.x + (ly - cy) * -LIGHT.y > r * 0.1) { ctx.fillStyle = 'rgba(255,225,150,0.8)'; ctx.fillRect(lx | 0, ly | 0, 1, 1); }
+      }
+    }
+    // aurora ribbons (pixel chains)
+    if (p.aurora) {
+      const tt = R._t || 0;
+      for (const pole of [-1, 1]) for (let b = 0; b < 3; b++) {
+        ctx.fillStyle = U.rgbStr(U.hsl(120 + b * 30 + Math.sin(tt + b) * 20, 0.85, 0.6), 0.5);
+        for (let x = -r; x <= r; x += 2) {
+          if (x * x > r * r * 0.92) continue;
+          const yy = cy + pole * r * (0.6 + b * 0.06) + Math.sin(x * 0.06 + tt * 2 + b) * 4;
+          ctx.fillRect((cx + x) | 0, yy | 0, 2, 2);
         }
       }
-      ctx.globalCompositeOperation = 'source-over';
     }
-    ctx.restore();
-
-    // atmosphere rim — bright pixel halo (the glowing edge in the reference)
-    if (p.atmosphere > 0.05) {
-      const atmC = U.mix([150, 205, 255], U.hexRgb(p.oceanColor), 0.15);
-      const ag = ctx.createRadialGradient(cx, cy, r * 0.86, cx, cy, r * 1.22);
-      ag.addColorStop(0, U.rgbStr(atmC, 0));
-      ag.addColorStop(0.62, U.rgbStr(atmC, 0.10 * p.atmosphere));
-      ag.addColorStop(0.86, U.rgbStr(atmC, 0.5 * p.atmosphere));
-      ag.addColorStop(1, U.rgbStr(atmC, 0));
-      ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, cy, r * 1.22, 0, U.TAU); ctx.fill();
-      // crisp bright ring on the lit limb
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = U.rgbStr(U.shade(atmC, 0.35), 0.7 * p.atmosphere);
-      ctx.beginPath(); ctx.arc(cx, cy, r + 1, 0, U.TAU); ctx.stroke();
-    }
-    // life halo
     if (p.life && p.life.present) {
-      ctx.strokeStyle = U.rgbStr([120, 255, 170], 0.10 + 0.08 * p.life.biodiversity);
-      ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, r * 1.18, 0, U.TAU); ctx.stroke();
+      ctx.strokeStyle = U.rgbStr([120, 255, 170], 0.12 + 0.08 * p.life.biodiversity);
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, r + 7, 0, U.TAU); ctx.stroke();
     }
   }
 
@@ -825,7 +814,6 @@
       drawParticles();
       drawShockwaves(); drawFlyers();
       if (flash > 0.001) { ctx.fillStyle = `rgba(255,250,240,${flash * 0.6})`; ctx.fillRect(0, 0, W, H); flash *= 0.88; }
-      vignette();
       blit();
       return;
     }

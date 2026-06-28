@@ -151,48 +151,53 @@
     }
   }
 
-  /* ---------- baking ---------- */
-  function rebake() {
-    if (!base) { base = document.createElement('canvas'); bctx = base.getContext('2d'); }
-    base.width = MW * TS; base.height = MH * TS;
-    bctx.imageSmoothingEnabled = false;
-    for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-      const i = idx(x, y), b = biome[i];
-      const pal = PAL[b];
-      const shadeNoise = ((x * 7 + y * 13 + (hash(x, y, 1) * 4 | 0)) % 2);
-      bctx.fillStyle = pal[shadeNoise];
-      bctx.fillRect(x * TS, y * TS, TS, TS);
-      // mountain shading / snow caps
-      if (b === B.ROCK || b === B.PEAK) {
-        bctx.fillStyle = 'rgba(255,255,255,0.10)';
-        bctx.fillRect(x * TS, y * TS, TS, 2);
-        bctx.fillStyle = 'rgba(0,0,0,0.18)';
-        bctx.fillRect(x * TS, y * TS + TS - 2, TS, 2);
-      }
-      // coastline darken on deep edges
-      if (b === B.DEEP) { bctx.fillStyle = 'rgba(0,0,0,0.12)'; bctx.fillRect(x * TS, y * TS, TS, TS); }
-      if (tree[i]) drawTreeBaked(x, y, tree[i]);
+  /* ---------- per-tile direct drawing (crisp; no baked downscale) ---------- */
+  // village hut footprints, indexed by tile for quick draw
+  const villageAt = {};
+  function indexVillages() { for (const k in villageAt) delete villageAt[k]; for (const v of villages) villageAt[v.y * MW + v.x] = v; }
+
+  function drawTile(ctx, x, y, sx, sy, T) {
+    const i = idx(x, y), b = biome[i];
+    const pal = PAL[b];
+    const checker = ((x + y) & 1);
+    ctx.fillStyle = pal[checker];
+    ctx.fillRect(sx, sy, T + 1, T + 1);
+    if (b === B.PEAK || b === B.ROCK) {
+      // mountain: top highlight + bottom shadow + occasional snow cap
+      ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx, sy, T + 1, Math.max(1, T * 0.25));
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(sx, sy + T - Math.max(1, T * 0.28), T + 1, Math.max(1, T * 0.28));
+      if (b === B.PEAK) { ctx.fillStyle = '#eef3f8'; ctx.fillRect(sx + (T >> 2), sy, T >> 1, Math.max(1, T * 0.3)); }
+    } else if (b === B.DEEP) {
+      ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(sx, sy, T + 1, T + 1);
+    } else if (b === B.LAVA) {
+      if (checker) { ctx.fillStyle = '#ffd24a'; ctx.fillRect(sx + (T >> 2), sy + (T >> 2), Math.max(1, T * 0.4), Math.max(1, T * 0.4)); }
+    } else if (b === B.SAND || b === B.DESERT) {
+      if ((x * 3 + y) % 4 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(sx + 1, sy + 1, 1, 1); }
     }
-    // village huts baked in
-    for (const v of villages) drawVillageBaked(v);
-    dirty = false;
+    const v = villageAt[i];
+    if (v) drawVillage(ctx, sx, sy, T, v);
+    else if (tree[i]) drawTree(ctx, sx, sy, T, tree[i]);
   }
 
-  function drawTreeBaked(x, y, ty) {
-    const c = TREE_COL[ty]; const px = x * TS, py = y * TS;
+  function drawTree(ctx, sx, sy, T, ty) {
+    const c = TREE_COL[ty];
+    const cw = Math.max(3, Math.round(T * 0.78)), pad = Math.floor((T - cw) / 2);
+    const bx = sx + pad, by = sy + Math.max(1, Math.floor(T * 0.06));
     // trunk
-    bctx.fillStyle = '#5a3f28'; bctx.fillRect(px + TS / 2 - 1, py + TS - 3, 2, 3);
-    // canopy (chunky)
-    bctx.fillStyle = c[2]; bctx.fillRect(px + 1, py + 1, TS - 2, TS - 3);   // outline/shadow
-    bctx.fillStyle = c[0]; bctx.fillRect(px + 1, py + 1, TS - 3, TS - 4);
-    bctx.fillStyle = c[1]; bctx.fillRect(px + 2, py + 2, TS - 5, TS - 6);   // highlight
+    ctx.fillStyle = '#5a3f28'; ctx.fillRect(sx + (T >> 1) - 1, sy + T - Math.max(2, T * 0.28), 2, Math.max(2, T * 0.28));
+    // canopy: shadow, body, highlight
+    ctx.fillStyle = c[2]; ctx.fillRect(bx, by, cw, cw);
+    ctx.fillStyle = c[0]; ctx.fillRect(bx, by, cw - 1, cw - 1);
+    ctx.fillStyle = c[1]; ctx.fillRect(bx + 1, by + 1, Math.max(1, cw - 3), Math.max(1, cw - 3));
+    ctx.fillStyle = c[2]; ctx.fillRect(bx + cw - 2, by + cw - 2, 1, 1);
   }
-  function drawVillageBaked(v) {
-    const px = v.x * TS, py = v.y * TS;
-    for (let k = 0; k < v.size; k++) {
-      const ox = px + (k % 2) * 4 - 2, oy = py + Math.floor(k / 2) * 4 - 2;
-      bctx.fillStyle = '#7a3b2a'; bctx.fillRect(ox, oy, 4, 4);
-      bctx.fillStyle = '#9c4a34'; bctx.fillRect(ox, oy, 4, 2);
+  function drawVillage(ctx, sx, sy, T, v) {
+    const n = Math.min(4, v.size + 1);
+    for (let k = 0; k < n; k++) {
+      const ox = sx + (k % 2) * (T >> 1), oy = sy + ((k / 2) | 0) * (T >> 1);
+      const w = Math.max(2, T >> 1) - 1;
+      ctx.fillStyle = '#7a3b2a'; ctx.fillRect(ox, oy, w, w);
+      ctx.fillStyle = '#b35a3c'; ctx.fillRect(ox, oy, w, Math.max(1, w >> 1)); // roof
     }
   }
 
@@ -327,61 +332,79 @@
     if (changed) dirty = true;
   }
 
-  /* ---------- render ---------- */
+  /* ---------- render (direct crisp tiles, no downscale) ---------- */
   function render(ctx, opt) {
     const W = opt.W, H = opt.H, t = opt.t, tr = opt.tr;
     if (!generated) generate(GC.World.planet);
-    if (dirty) rebake();
+    indexVillages();
 
-    // fit baked map into the buffer (contain), with zoom + camera
-    const fit = Math.min(W / base.width, H / base.height) * zoom;
-    const drawW = base.width * fit, drawH = base.height * fit;
-    const ox = (W - drawW) / 2 - (camX - 0.5) * drawW * (zoom - 1);
-    const oy = (H - drawH) / 2 - (camY - 0.5) * drawH * (zoom - 1);
-    const TILE = TS * fit;
+    // integer tile size in buffer px: ~whole map across at zoom 1, bigger when zoomed in
+    const baseAcross = 116;
+    const T = Math.max(5, Math.round((W / baseAcross) * zoom));
+    // camera: top-left tile offset so (camX,camY) of the map sits at view center
+    const viewTilesX = W / T, viewTilesY = H / T;
+    let originX = camX * MW - viewTilesX / 2;
+    let originY = camY * MH - viewTilesY / 2;
+    originX = U.clamp(originX, 0, Math.max(0, MW - viewTilesX));
+    originY = U.clamp(originY, 0, Math.max(0, MH - viewTilesY));
 
-    // deep-space backdrop behind the map (the void around the planet disc)
-    ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#070a12'; ctx.fillRect(0, 0, W, H);
 
-    // transition: fade/zoom-in when descending
     ctx.save();
-    if (tr < 1) { const s = U.lerp(opt.dir < 0 ? 1.3 : 0.8, 1, tr); ctx.translate(W / 2, H / 2); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2); ctx.globalAlpha = U.lerp(0.2, 1, tr); }
-
+    if (tr < 1) { const s = U.lerp(opt.dir < 0 ? 1.25 : 0.85, 1, tr); ctx.translate(W / 2, H / 2); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2); ctx.globalAlpha = U.lerp(0.25, 1, tr); }
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(base, ox, oy, drawW, drawH);
 
-    // animated water sparkles
-    const tw = (t * 6) | 0;
-    ctx.fillStyle = 'rgba(220,240,255,0.5)';
-    for (let k = 0; k < 80; k++) {
-      const wi = waterTiles[(k * 977 + tw * 131) % (waterTiles.length || 1)];
-      if (wi == null) break;
-      const x = wi % MW, y = (wi / MW) | 0;
-      if (((x + y + tw) % 5) === 0) ctx.fillRect((ox + x * TILE) | 0, (oy + y * TILE + (tw % 2)) | 0, Math.max(1, TILE * 0.3), 1);
+    const x0 = Math.floor(originX), y0 = Math.floor(originY);
+    const offX = -((originX - x0) * T), offY = -((originY - y0) * T);
+    const cols = Math.ceil(viewTilesX) + 1, rows = Math.ceil(viewTilesY) + 1;
+
+    // tiles
+    for (let ry = 0; ry < rows; ry++) {
+      const ty = y0 + ry; if (ty < 0 || ty >= MH) continue;
+      const sy = Math.round(offY + ry * T);
+      for (let rx = 0; rx < cols; rx++) {
+        const tx = x0 + rx; if (tx < 0 || tx >= MW) continue;
+        drawTile(ctx, tx, ty, Math.round(offX + rx * T), sy, T);
+      }
+    }
+
+    // animated water shimmer
+    const tw = (t * 5) | 0;
+    ctx.fillStyle = 'rgba(225,245,255,0.55)';
+    for (let ry = 0; ry < rows; ry++) {
+      const ty = y0 + ry; if (ty < 0 || ty >= MH) continue;
+      for (let rx = 0; rx < cols; rx++) {
+        const tx = x0 + rx; if (tx < 0 || tx >= MW) continue;
+        const b = biome[idx(tx, ty)];
+        if ((b === B.WATER || b === B.DEEP) && ((tx + ty + tw) % 6) === 0)
+          ctx.fillRect(Math.round(offX + rx * T) + 1, Math.round(offY + ry * T) + 1 + (tw % 2), Math.max(1, T * 0.35) | 0, 1);
+      }
     }
 
     // fire
     for (let i = 0; i < fire.length; i++) {
       if (fire[i] > 0) {
         const x = i % MW, y = (i / MW) | 0;
-        const fx = ox + x * TILE, fy = oy + y * TILE;
+        if (x < x0 || x >= x0 + cols || y < y0 || y >= y0 + rows) continue;
+        const fx = offX + (x - x0) * T, fy = offY + (y - y0) * T;
         ctx.fillStyle = Math.random() < 0.5 ? '#ff7a1f' : '#ffd24a';
-        ctx.fillRect(fx | 0, (fy - TILE * 0.3) | 0, Math.max(1, TILE * 0.7), Math.max(1, TILE * 0.9));
+        ctx.fillRect(fx | 0, (fy - T * 0.3) | 0, Math.max(1, T * 0.7) | 0, Math.max(1, T) | 0);
       }
     }
 
     // units
     for (const u of units) {
-      const ux = ox + u.x * TILE + TILE * 0.25, uy = oy + u.y * TILE + TILE * 0.25;
-      ctx.fillStyle = u.t === 'deer' ? '#b07a45' : '#d8d2c0';
-      ctx.fillRect(ux | 0, uy | 0, Math.max(1, TILE * 0.45), Math.max(1, TILE * 0.45));
+      if (u.x < x0 || u.x >= x0 + cols || u.y < y0 || u.y >= y0 + rows) continue;
+      const ux = offX + (u.x - x0) * T + T * 0.28, uy = offY + (u.y - y0) * T + T * 0.28;
+      ctx.fillStyle = u.t === 'deer' ? '#caa06a' : '#e6e0cf';
+      const us = Math.max(1, T * 0.4) | 0; ctx.fillRect(ux | 0, uy | 0, us, us);
     }
 
     ctx.restore();
 
-    // soft top-down light vignette
-    const vg = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
-    vg.addColorStop(0, 'rgba(255,250,230,0.04)'); vg.addColorStop(1, 'rgba(0,0,10,0.45)');
+    // top-down light vignette
+    const vg = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.32, W / 2, H / 2, Math.max(W, H) * 0.72);
+    vg.addColorStop(0, 'rgba(255,250,230,0.05)'); vg.addColorStop(1, 'rgba(0,0,8,0.4)');
     ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   }
 
@@ -389,7 +412,7 @@
     if (!generated || S_lastSeed !== planet.seed || S_lastClimate !== planet.climate) {
       generate(planet); S_lastSeed = planet.seed; S_lastClimate = planet.climate;
     }
-    zoom = 1; camX = camY = 0.5;
+    zoom = 1.0; camX = camY = 0.5;
   }
   function invalidate() { generated = false; }
   let S_lastSeed = null, S_lastClimate = null;
@@ -403,6 +426,7 @@
   GC.surface = {
     render, tick, enter, invalidate, stats,
     handle: function (it) { return S_handle(it); },
-    zoomBy: function (f) { zoom = U.clamp(zoom * f, 1, 5); },
+    zoomBy: function (f) { zoom = U.clamp(zoom * f, 1, 6); },
+    atMin: function () { return zoom <= 1.001; },
   };
 })(window.GC = window.GC || {});

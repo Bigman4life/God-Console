@@ -113,8 +113,8 @@
       case 'zoom': {
         // walk the main ladder: Surface(8) <-> Planet(9) <-> System(10) <-> Galaxy(11) <-> Universe(12)
         if (W.view === 'surface') {
-          if (it.params.d > 0) setLevel(9);              // zoom out -> back to orbit
-          else GC.surface.zoomBy(1.4);                   // zoom in -> magnify the map
+          if (it.params.d > 0) { if (GC.surface.atMin()) setLevel(9); else GC.surface.zoomBy(0.71); } // out: widen, then orbit
+          else GC.surface.zoomBy(1.4);                   // in: magnify the map
         } else {
           setLevel(U.clamp(W.cam.level + it.params.d, 8, 12));
         }
