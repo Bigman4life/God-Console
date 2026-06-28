@@ -61,7 +61,7 @@ required). A taste:
 | **Sky** | `add three moons` · `add rings` · `make the oceans purple` · `make it rain` · `darker` |
 | **Life** | `create life` · `create intelligent life` · `start a war` · `cause a mass extinction` |
 | **Views** | `go to surface` / `descend` (God Eye) · `return to space` / `ascend` |
-| **Surface** (God Eye) | `grow a forest` · `plant cherry trees in the north` · `raise mountains in the east` · `flood the south` · `drain the sea` · `make a desert` · `set fire to the forest` · `build a village` · `spawn animals` |
+| **Surface** (God Eye) | `grow a forest` · `plant cherry trees in the north` · `bloom wildflowers` · `raise mountains in the east` · `flood the south` · `drain the sea` · `make a desert` · `set fire to the forest` · `build a village` · `spawn animals` |
 | **Cosmos** | `spawn a comet` · `create a black hole` · `a black hole orbits the moon` · `trigger a supernova` · `strike the planet with an asteroid` · `add auroras` |
 | **Sandbox** | `what if gravity was 10x?` · `what if oxygen disappeared?` · `what if dinosaurs survived?` · `what if Earth had rings?` |
 | **Time** | `accelerate time` · `advance one million years` · `pause` · `resume` |
@@ -131,7 +131,7 @@ sentence ─▶ interpreter ─▶ intent {verb, params} ─▶ game.exec ─▶
 | `src/interpreter.js` | Interpreter | sentence → `intent`; **optional LLM adapter emits the same intent shape** |
 | `src/sim.js` | Simulation | time, orbits, life evolution, civilization tiers, events |
 | `src/render.js` | Renderer | low-res **pixel backbuffer** (nearest-neighbour upscale); **software-rendered planet** (per-pixel sphere sampling + flat *banded* lighting over a posterized texture — crisp pixel art, no blurry gradients); pixel-3D space |
-| `src/surface.js` | Renderer (God Eye) | top-down 2D biome **tilemap** drawn **directly** at integer tile sizes (no downscale) with a zoomable camera; detailed tree/mountain/village sprites; live water/fire/units; surface god-powers |
+| `src/surface.js` | Renderer (God Eye) | top-down 2D biome **tilemap** drawn **directly** at integer tile sizes with a zoomable camera; **depth-based LOD** (specks → clusters → full sprites that **bounce in**); dense flower/flora carpet, swaying trees, depth-graded water, savanna/desert/snow; live water/fire/units; surface god-powers. Procedural sprites sit behind a seam ready to swap for an art atlas |
 | `src/audio.js` | — | generative Web Audio ambient + event tones (no asset files) |
 | `src/companion.js` | Companion | calm OS-style readouts and the live status panel |
 | `src/ui.js` | — | autocomplete suggestion bar + saved-universe browser panel |

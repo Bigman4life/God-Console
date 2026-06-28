@@ -16,6 +16,7 @@
     'create life', 'create intelligent life', 'start a war', 'cause a mass extinction',
     'go to surface', 'return to space',
     'grow a forest', 'plant cherry trees in the north', 'plant pine trees',
+    'bloom wildflowers', 'plant purple flowers in the south',
     'raise mountains', 'flood the south', 'drain the sea', 'make a desert',
     'set fire to the forest', 'build a village', 'spawn animals', 'flatten the land',
     'add auroras', 'spawn a comet', 'create a black hole', 'a black hole orbits the moon',

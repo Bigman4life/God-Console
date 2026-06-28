@@ -9,39 +9,50 @@
   const U = GC.util;
 
   // biome ids
-  const B = { DEEP: 0, WATER: 1, SAND: 2, GRASS: 3, ROCK: 4, PEAK: 5, SNOW: 6, DESERT: 7, LAVA: 8, ASH: 9, MARSH: 10 };
+  const B = { DEEP: 0, WATER: 1, SAND: 2, GRASS: 3, ROCK: 4, PEAK: 5, SNOW: 6, DESERT: 7, LAVA: 8, ASH: 9, MARSH: 10, SAVANNA: 11, CLOSE: 12 };
   // tree types
   const TR = { NONE: 0, GREEN: 1, AUTUMN: 2, BLOSSOM: 3, PINE: 4, JUNGLE: 5, DEAD: 6 };
 
   const PAL = {
     [B.DEEP]: ['#173a6b', '#1b4378'],
-    [B.WATER]: ['#2f73c4', '#3a83d6'],
-    [B.SAND]: ['#d8c98f', '#cabd83'],
-    [B.GRASS]: ['#5a9e3c', '#69ab46'],
-    [B.ROCK]: ['#4a4a52', '#565660'],
-    [B.PEAK]: ['#d7dbe2', '#c2c7d0'],
+    [B.WATER]: ['#3a83d6', '#4a90dd'],     // shallow / coastal
+    [B.CLOSE]: ['#2f73c4', '#357bcb'],     // mid ocean
+    [B.SAND]: ['#e0cf94', '#d4c386'],
+    [B.GRASS]: ['#57a23a', '#63aa44'],
+    [B.ROCK]: ['#5a5a62', '#6a6a74'],
+    [B.PEAK]: ['#3a3a42', '#46464e'],      // dark volcanic/obsidian rock (snow drawn on top)
     [B.SNOW]: ['#e9f1f7', '#dbe6ef'],
-    [B.DESERT]: ['#cda85e', '#bd9a52'],
+    [B.DESERT]: ['#d3bd6f', '#c6ae60'],
     [B.LAVA]: ['#e0591f', '#c8431a'],
     [B.ASH]: ['#3a3438', '#443d42'],
     [B.MARSH]: ['#3f7d5a', '#478a63'],
+    [B.SAVANNA]: ['#c2b25f', '#cbbb69'],
   };
   const TREE_COL = {
     [TR.GREEN]: ['#2f7d2a', '#3c9636', '#205a1c'],
-    [TR.AUTUMN]: ['#c87a1f', '#d98f2c', '#9c5a14'],
-    [TR.BLOSSOM]: ['#cf6f9e', '#e08bb4', '#a8547d'],
+    [TR.AUTUMN]: ['#c64a1f', '#dd7a22', '#922f12'],
+    [TR.BLOSSOM]: ['#df84b0', '#ef9ec4', '#b85d8a'],
     [TR.PINE]: ['#1f5f3a', '#2a7449', '#16462a'],
     [TR.JUNGLE]: ['#1f7a32', '#2a9440', '#155322'],
-    [TR.DEAD]: ['#5a4a3a', '#6b5746', '#42352a'],
+    [TR.DEAD]: ['#6b5746', '#7d6754', '#4a3a2c'],
+  };
+  // flower / small-plant colours (flora ids 1..6) — the dense carpet in the refs
+  const FLORA = {
+    1: ['#d23b3b', '#e85a5a'],   // red
+    2: ['#e07a1f', '#f09a3a'],   // orange
+    3: ['#e6c63a', '#f2da5a'],   // yellow
+    4: ['#a64fc4', '#c46fe0'],   // purple
+    5: ['#d46fa0', '#e88fb8'],   // pink
+    6: ['#3f8a3a', '#4fa048'],   // bush (green)
   };
 
-  const TS = 9;          // baked tile size in px
   let MW = 0, MH = 0;
-  let elev, moist, biome, tree, fire;
+  let elev, moist, biome, tree, fire, flora;
   let waterTiles = [];
   let units = [], villages = [];
-  let base = null, bctx = null, dirty = true, generated = false;
+  let generated = false;
   let camX = 0.5, camY = 0.5, zoom = 1; // view focus (0..1) + zoom factor
+  let curTier = 0, lastTier = 0, bounceStart = -10; // LOD bounce-in state
 
   function hash(x, y, s) {
     let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(s | 0, 0x9e3779b1)) | 0;
@@ -63,13 +74,14 @@
 
   function idx(x, y) { return y * MW + x; }
   function inb(x, y) { return x >= 0 && y >= 0 && x < MW && y < MH; }
+  function easeOutBack(p) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); }
 
   /* ---------- generation ---------- */
   function generate(planet) {
     MW = 128; MH = 80;
     const n = MW * MH;
     elev = new Float32Array(n); moist = new Float32Array(n);
-    biome = new Uint8Array(n); tree = new Uint8Array(n); fire = new Uint8Array(n);
+    biome = new Uint8Array(n); tree = new Uint8Array(n); fire = new Uint8Array(n); flora = new Uint8Array(n);
     units = []; villages = []; waterTiles = [];
     const seed = planet.seed | 0;
     const cl = planet.climate;
@@ -80,11 +92,10 @@
       for (let x = 0; x < MW; x++) {
         const nx = x / MW * scale, ny = y / MH * scale;
         let e = fbm(nx, ny, seed);
-        // island-ish falloff toward edges so the "world" reads as a landmass set in ocean
         const dx = (x / MW - 0.5) * 2, dy = (y / MH - 0.5) * 2;
         e -= Math.pow(dx * dx + dy * dy, 1.4) * 0.30;
         const m = fbm(nx + 100, ny + 100, seed ^ 0x55);
-        const lat = 1 - Math.abs(y / MH - 0.5) * 2;        // 1 at equator, 0 at poles
+        const lat = 1 - Math.abs(y / MH - 0.5) * 2;
         const temp = tempBase + (lat - 0.5) * 0.9 - (e > sea ? (e - sea) * 0.8 : 0);
         elev[idx(x, y)] = e; moist[idx(x, y)] = m;
         biome[idx(x, y)] = classify(e, m, temp, sea, cl);
@@ -93,33 +104,48 @@
     // beaches: land tiles next to water become sand (if low)
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       const i = idx(x, y);
-      if (biome[i] === B.GRASS && elev[i] < sea + 0.06 && nearWater(x, y)) biome[i] = B.SAND;
+      if ((biome[i] === B.GRASS || biome[i] === B.SAVANNA) && elev[i] < sea + 0.06 && nearWater(x, y)) biome[i] = B.SAND;
     }
-    // trees + water list
+    // trees, flora carpet, water list
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-      const i = idx(x, y), b = biome[i];
-      if (b === B.DEEP || b === B.WATER) waterTiles.push(i);
-      if ((b === B.GRASS || b === B.MARSH) && moist[i] > 0.42) {
-        const lat = 1 - Math.abs(y / MH - 0.5) * 2;
-        const temp = tempBase + (lat - 0.5) * 0.9;
-        if (hash(x, y, seed ^ 0x9) < (b === B.MARSH ? 0.7 : 0.45)) tree[i] = treeType(temp, moist[i], cl);
+      const i = idx(x, y), b = biome[i], m = moist[i];
+      if (b === B.DEEP || b === B.WATER || b === B.CLOSE) waterTiles.push(i);
+      const lat = 1 - Math.abs(y / MH - 0.5) * 2;
+      const temp = tempBase + (lat - 0.5) * 0.9;
+      if ((b === B.GRASS || b === B.MARSH) && m > 0.42) {
+        if (hash(x, y, seed ^ 0x9) < (b === B.MARSH ? 0.72 : 0.42)) tree[i] = treeType(temp, m, cl);
+      }
+      // dense flower/plant carpet on open grass & savanna (the WorldBox look)
+      if (!tree[i] && (b === B.GRASS || b === B.SAVANNA || b === B.MARSH)) {
+        const dens = b === B.SAVANNA ? 0.30 : 0.62;
+        if (hash(x, y, seed ^ 0x3c1) < dens * (0.5 + m)) flora[i] = floraType(temp, m, x, y, seed, cl);
       }
     }
     if (planet.civ && planet.civ.present) seedVillages(planet.civ.level + 2);
     if (planet.life && planet.life.present) seedAnimals(40);
-    dirty = true; generated = true;
+    generated = true;
   }
 
   function classify(e, m, temp, sea, cl) {
-    if (e < sea - 0.07) return B.DEEP;
+    if (e < sea - 0.10) return B.DEEP;
+    if (e < sea - 0.04) return B.CLOSE;
     if (e < sea) return B.WATER;
     if (cl === 'volcanic' && e > sea && e < sea + 0.05 && m < 0.4) return B.LAVA;
-    if (e > 0.80) return temp < 0 ? B.PEAK : B.PEAK;
-    if (e > 0.68) return B.ROCK;
+    if (e > 0.80) return B.PEAK;
+    if (e > 0.68) return cl === 'volcanic' ? B.PEAK : B.ROCK;
     if (temp < -0.15) return B.SNOW;
-    if (temp > 0.5 && m < 0.32) return cl === 'volcanic' ? B.ASH : B.DESERT;
+    if (temp > 0.5 && m < 0.30) return cl === 'volcanic' ? B.ASH : B.DESERT;
+    if (temp > 0.34 && m < 0.46) return B.SAVANNA;
     if (m > 0.66 && temp > 0.1) return B.MARSH;
     return B.GRASS;
+  }
+  function floraType(temp, m, x, y, seed, cl) {
+    if (cl === 'volcanic' || cl === 'barren') return 0;
+    const r = hash(x, y, seed ^ 0x7ff);
+    if (r < 0.18) return 6;                 // bush
+    if (m > 0.6) return r < 0.5 ? 5 : 4;    // wet: pink/purple
+    if (temp > 0.4) return r < 0.5 ? 3 : 2; // warm: yellow/orange
+    return r < 0.4 ? 1 : (r < 0.7 ? 3 : 4); // red/yellow/purple mix
   }
   function treeType(temp, m, cl) {
     if (cl === 'volcanic') return TR.DEAD;
@@ -131,7 +157,7 @@
   }
   function nearWater(x, y) {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (inb(x + dx, y + dy)) { const b = biome[idx(x + dx, y + dy)]; if (b === B.WATER || b === B.DEEP) return true; }
+      if (inb(x + dx, y + dy)) { const b = biome[idx(x + dx, y + dy)]; if (b === B.WATER || b === B.DEEP || b === B.CLOSE) return true; }
     }
     return false;
   }
@@ -147,7 +173,7 @@
     while (placed < count && tries++ < 800) {
       const x = U.randInt(0, MW - 1), y = U.randInt(0, MH - 1), i = idx(x, y);
       const b = biome[i];
-      if (b !== B.DEEP && b !== B.WATER && b !== B.LAVA) { units.push({ x, y, t: tree[i] ? 'deer' : 'critter', cd: U.rand(0, 1) }); placed++; }
+      if (b !== B.DEEP && b !== B.WATER && b !== B.CLOSE && b !== B.LAVA) { units.push({ x, y, t: tree[i] ? 'deer' : 'critter', cd: U.rand(0, 1) }); placed++; }
     }
   }
 
@@ -156,48 +182,79 @@
   const villageAt = {};
   function indexVillages() { for (const k in villageAt) delete villageAt[k]; for (const v of villages) villageAt[v.y * MW + v.x] = v; }
 
-  function drawTile(ctx, x, y, sx, sy, T) {
+  // LOD tier from tile size T (buffer px): 0 far specks · 1 clusters · 2 full sprites
+  function tierFor(T) { return T < 9 ? 0 : T < 16 ? 1 : 2; }
+
+  function drawTileBase(ctx, x, y, sx, sy, T) {
     const i = idx(x, y), b = biome[i];
     const pal = PAL[b];
     const checker = ((x + y) & 1);
     ctx.fillStyle = pal[checker];
     ctx.fillRect(sx, sy, T + 1, T + 1);
     if (b === B.PEAK || b === B.ROCK) {
-      // mountain: top highlight + bottom shadow + occasional snow cap
-      ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx, sy, T + 1, Math.max(1, T * 0.25));
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(sx, sy + T - Math.max(1, T * 0.28), T + 1, Math.max(1, T * 0.28));
-      if (b === B.PEAK) { ctx.fillStyle = '#eef3f8'; ctx.fillRect(sx + (T >> 2), sy, T >> 1, Math.max(1, T * 0.3)); }
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx, sy, T + 1, Math.max(1, T * 0.22));
+      ctx.fillStyle = 'rgba(0,0,0,0.24)'; ctx.fillRect(sx, sy + T - Math.max(1, T * 0.26), T + 1, Math.max(1, T * 0.26));
     } else if (b === B.DEEP) {
-      ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(sx, sy, T + 1, T + 1);
-    } else if (b === B.LAVA) {
-      if (checker) { ctx.fillStyle = '#ffd24a'; ctx.fillRect(sx + (T >> 2), sy + (T >> 2), Math.max(1, T * 0.4), Math.max(1, T * 0.4)); }
-    } else if (b === B.SAND || b === B.DESERT) {
-      if ((x * 3 + y) % 4 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(sx + 1, sy + 1, 1, 1); }
+      ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(sx, sy, T + 1, T + 1);
+    } else if (b === B.SAND || b === B.DESERT || b === B.SAVANNA) {
+      if ((x * 3 + y) % 4 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx + 1, sy + 1, 1, 1); }
     }
-    const v = villageAt[i];
-    if (v) drawVillage(ctx, sx, sy, T, v);
-    else if (tree[i]) drawTree(ctx, sx, sy, T, tree[i]);
   }
 
-  function drawTree(ctx, sx, sy, T, ty) {
+  // objects (trees/flora/mountains-snow/lava/villages) with LOD + sway + bounce
+  function drawTileObjects(ctx, x, y, sx, sy, T, env) {
+    const i = idx(x, y), b = biome[i];
+    const t = env.t, tier = env.tier, bs = env.bounce;
+    // snow caps & lava glow scale with detail too
+    if (b === B.PEAK && tier >= 1) { ctx.fillStyle = '#eef3f8'; ctx.fillRect(sx + (T >> 2), sy, Math.max(1, T >> 1), Math.max(1, T * 0.3)); }
+    if (b === B.LAVA) { const fl = 0.5 + 0.5 * Math.sin(t * 6 + (x + y)); ctx.fillStyle = fl > 0.6 ? '#ffd24a' : '#ff8a2a'; ctx.fillRect(sx + (T >> 2), sy + (T >> 2), Math.max(1, T * 0.45), Math.max(1, T * 0.45)); }
+
+    const v = villageAt[i];
+    if (v) { drawVillage(ctx, sx, sy, T, v); return; }
+    if (tree[i]) { drawTree(ctx, x, y, sx, sy, T, tree[i], tier, bs, t); return; }
+    if (flora[i]) drawFlora(ctx, x, y, sx, sy, T, flora[i], tier, bs);
+  }
+
+  function drawTree(ctx, x, y, sx, sy, T, ty, tier, bs, t) {
     const c = TREE_COL[ty];
-    const cw = Math.max(3, Math.round(T * 0.78)), pad = Math.floor((T - cw) / 2);
-    const bx = sx + pad, by = sy + Math.max(1, Math.floor(T * 0.06));
-    // trunk
-    ctx.fillStyle = '#5a3f28'; ctx.fillRect(sx + (T >> 1) - 1, sy + T - Math.max(2, T * 0.28), 2, Math.max(2, T * 0.28));
-    // canopy: shadow, body, highlight
+    if (tier === 0) { ctx.fillStyle = c[0]; ctx.fillRect(sx + (T >> 1) - 1, sy + (T >> 1) - 1, 2, 2); return; }
+    // sway: canopy shifts horizontally with a per-tile phase
+    const sway = tier === 2 ? Math.round(Math.sin(t * 1.8 + (x * 13 + y * 7)) * Math.max(1, T * 0.07)) : 0;
+    let cw = Math.max(3, Math.round(T * (tier === 1 ? 0.7 : 0.82)));
+    cw = Math.max(2, Math.round(cw * bs));
+    const bx = sx + ((T - cw) >> 1) + sway, by = sy + Math.max(0, Math.floor(T * 0.04));
+    if (tier === 2) { ctx.fillStyle = '#5a3f28'; ctx.fillRect(sx + (T >> 1) - 1, sy + T - Math.max(2, T * 0.26), 2, Math.max(2, T * 0.26)); }
     ctx.fillStyle = c[2]; ctx.fillRect(bx, by, cw, cw);
     ctx.fillStyle = c[0]; ctx.fillRect(bx, by, cw - 1, cw - 1);
     ctx.fillStyle = c[1]; ctx.fillRect(bx + 1, by + 1, Math.max(1, cw - 3), Math.max(1, cw - 3));
-    ctx.fillStyle = c[2]; ctx.fillRect(bx + cw - 2, by + cw - 2, 1, 1);
   }
+
+  function drawFlora(ctx, x, y, sx, sy, T, ft, tier, bs) {
+    const c = FLORA[ft];
+    const cx = sx + (T >> 1), cy = sy + (T >> 1);
+    if (tier === 0) { ctx.fillStyle = c[0]; ctx.fillRect(cx - 1, cy - 1, 2, 2); return; }
+    if (ft === 6) { // bush
+      let w = Math.max(2, Math.round(T * 0.5 * bs));
+      ctx.fillStyle = c[0]; ctx.fillRect(cx - (w >> 1), cy - (w >> 1), w, w);
+      ctx.fillStyle = c[1]; ctx.fillRect(cx - (w >> 1), cy - (w >> 1), Math.max(1, w - 1), Math.max(1, w >> 1));
+      return;
+    }
+    if (tier === 1) { ctx.fillStyle = c[0]; ctx.fillRect(cx - 1, cy - 1, 2, 2); ctx.fillStyle = c[1]; ctx.fillRect(cx, cy - 1, 1, 1); return; }
+    // tier 2: little flower — stem + petals + center
+    const s = Math.max(3, Math.round(T * 0.42 * bs));
+    ctx.fillStyle = '#3f7a32'; ctx.fillRect(cx, cy, 1, Math.max(1, (T * 0.28) | 0)); // stem
+    ctx.fillStyle = c[0]; ctx.fillRect(cx - (s >> 1), cy - (s >> 1), s, s);
+    ctx.fillStyle = c[1]; ctx.fillRect(cx - (s >> 1) + 1, cy - (s >> 1), Math.max(1, s - 2), 1);
+    ctx.fillStyle = '#f2da5a'; ctx.fillRect(cx, cy, 1, 1); // center
+  }
+
   function drawVillage(ctx, sx, sy, T, v) {
     const n = Math.min(4, v.size + 1);
     for (let k = 0; k < n; k++) {
       const ox = sx + (k % 2) * (T >> 1), oy = sy + ((k / 2) | 0) * (T >> 1);
       const w = Math.max(2, T >> 1) - 1;
       ctx.fillStyle = '#7a3b2a'; ctx.fillRect(ox, oy, w, w);
-      ctx.fillStyle = '#b35a3c'; ctx.fillRect(ox, oy, w, Math.max(1, w >> 1)); // roof
+      ctx.fillStyle = '#b35a3c'; ctx.fillRect(ox, oy, w, Math.max(1, w >> 1));
     }
   }
 
@@ -217,7 +274,7 @@
     for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
       if (!pred(x, y)) continue;
       const i = idx(x, y), b = biome[i];
-      if (b === B.DEEP || b === B.WATER) continue;
+      if (b === B.DEEP || b === B.WATER || b === B.CLOSE) continue;
       fn(x, y, i);
     }
   }
@@ -226,16 +283,24 @@
     forest(p) {
       const ty = p.tree || null;
       eachLand(region(p.region), (x, y, i) => {
-        if ((biome[i] === B.GRASS || biome[i] === B.MARSH) && Math.random() < 0.55)
-          tree[i] = ty || treeType(0.2, 0.6, GC.World.planet.climate);
+        if ((biome[i] === B.GRASS || biome[i] === B.MARSH || biome[i] === B.SAVANNA) && Math.random() < 0.55) {
+          tree[i] = ty || treeType(0.2, 0.6, GC.World.planet.climate); flora[i] = 0;
+        }
       });
     },
     deforest(p) { eachLand(region(p.region), (x, y, i) => { tree[i] = 0; }); },
+    flowers(p) {
+      const ty = p.flowerType;
+      eachLand(region(p.region), (x, y, i) => {
+        if ((biome[i] === B.GRASS || biome[i] === B.SAVANNA || biome[i] === B.MARSH) && !tree[i] && Math.random() < 0.7)
+          flora[i] = ty || floraType(0.3, moist[i], x, y, GC.World.seed ^ (Date.now() & 0xffff), GC.World.planet.climate) || 3;
+      });
+    },
     grass(p) { eachLand(region(p.region), (x, y, i) => { if (biome[i] !== B.PEAK && biome[i] !== B.ROCK) { biome[i] = B.GRASS; } }); },
-    desert(p) { eachLand(region(p.region), (x, y, i) => { biome[i] = B.DESERT; tree[i] = 0; }); },
-    snow(p) { eachLand(region(p.region), (x, y, i) => { biome[i] = B.SNOW; if (tree[i]) tree[i] = TR.PINE; }); },
+    desert(p) { eachLand(region(p.region), (x, y, i) => { biome[i] = B.DESERT; tree[i] = 0; flora[i] = 0; }); },
+    snow(p) { eachLand(region(p.region), (x, y, i) => { biome[i] = B.SNOW; flora[i] = 0; if (tree[i]) tree[i] = TR.PINE; }); },
     mountains(p) {
-      eachLand(region(p.region), (x, y, i) => { if (Math.random() < 0.5) { biome[i] = Math.random() < 0.4 ? B.PEAK : B.ROCK; tree[i] = 0; elev[i] = 0.85; } });
+      eachLand(region(p.region), (x, y, i) => { if (Math.random() < 0.5) { biome[i] = Math.random() < 0.4 ? B.PEAK : B.ROCK; tree[i] = 0; flora[i] = 0; elev[i] = 0.85; } });
     },
     flatten(p) { eachLand(region(p.region), (x, y, i) => { if (biome[i] === B.PEAK || biome[i] === B.ROCK) { biome[i] = B.GRASS; elev[i] = 0.55; } }); },
     flood(p) {
@@ -249,11 +314,11 @@
     drain(p) {
       for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
         const i = idx(x, y);
-        if (biome[i] === B.WATER || biome[i] === B.DEEP) { biome[i] = B.SAND; elev[i] = 0.5; }
+        if (biome[i] === B.WATER || biome[i] === B.DEEP || biome[i] === B.CLOSE) { biome[i] = B.SAND; elev[i] = 0.5; }
       }
       recomputeWater();
     },
-    lava(p) { eachLand(region(p.region), (x, y, i) => { if (Math.random() < 0.4) { biome[i] = B.LAVA; tree[i] = 0; } }); },
+    lava(p) { eachLand(region(p.region), (x, y, i) => { if (Math.random() < 0.4) { biome[i] = B.LAVA; tree[i] = 0; flora[i] = 0; } }); },
     fire(p) {
       let lit = 0;
       eachLand(region(p.region), (x, y, i) => { if (tree[i] && lit < 30 && Math.random() < 0.3) { fire[i] = 60; lit++; } });
@@ -265,7 +330,7 @@
 
   function recomputeWater() {
     waterTiles = [];
-    for (let i = 0; i < biome.length; i++) if (biome[i] === B.DEEP || biome[i] === B.WATER) waterTiles.push(i);
+    for (let i = 0; i < biome.length; i++) if (biome[i] === B.DEEP || biome[i] === B.WATER || biome[i] === B.CLOSE) waterTiles.push(i);
   }
 
   // returns true if it handled the verb (surface-relevant); false otherwise
@@ -277,10 +342,10 @@
       mountains: () => ops.mountains(p), flatten: () => ops.flatten(p),
       flood: () => ops.flood(p), drain: () => ops.drain(p), lava: () => ops.lava(p),
       fire: () => ops.fire(p), village: () => ops.village(p), animals: () => ops.animals(p),
-      rain: () => ops.rain(p),
+      rain: () => ops.rain(p), flowers: () => ops.flowers(p),
     };
     if (!map[v]) return false;
-    map[v](); dirty = true;
+    map[v]();
     return true;
   }
 
@@ -326,10 +391,10 @@
     for (const u of units) {
       if (Math.random() < 0.1 * Math.min(6, speed)) {
         const nx = u.x + U.randInt(-1, 1), ny = u.y + U.randInt(-1, 1);
-        if (inb(nx, ny)) { const b = biome[idx(nx, ny)]; if (b !== B.DEEP && b !== B.WATER && b !== B.LAVA) { u.x = nx; u.y = ny; } }
+        if (inb(nx, ny)) { const b = biome[idx(nx, ny)]; if (b !== B.DEEP && b !== B.WATER && b !== B.CLOSE && b !== B.LAVA) { u.x = nx; u.y = ny; } }
       }
     }
-    if (changed) dirty = true;
+    void changed;
   }
 
   /* ---------- render (direct crisp tiles, no downscale) ---------- */
@@ -358,13 +423,30 @@
     const offX = -((originX - x0) * T), offY = -((originY - y0) * T);
     const cols = Math.ceil(viewTilesX) + 1, rows = Math.ceil(viewTilesY) + 1;
 
-    // tiles
+    // LOD tier + bounce-in: when detail tier increases, sprites pop in with overshoot
+    curTier = tierFor(T);
+    if (curTier > lastTier) bounceStart = t;
+    lastTier = curTier;
+    const bp = U.clamp((t - bounceStart) / 0.4, 0, 1);
+    const bounce = bp >= 1 ? 1 : easeOutBack(bp);
+    const env = { t, tier: curTier, bounce };
+
+    // pass 1: biome bases
     for (let ry = 0; ry < rows; ry++) {
       const ty = y0 + ry; if (ty < 0 || ty >= MH) continue;
       const sy = Math.round(offY + ry * T);
       for (let rx = 0; rx < cols; rx++) {
         const tx = x0 + rx; if (tx < 0 || tx >= MW) continue;
-        drawTile(ctx, tx, ty, Math.round(offX + rx * T), sy, T);
+        drawTileBase(ctx, tx, ty, Math.round(offX + rx * T), sy, T);
+      }
+    }
+    // pass 2: objects (trees/flora/villages) on top, so they overlap neighbours cleanly
+    for (let ry = 0; ry < rows; ry++) {
+      const ty = y0 + ry; if (ty < 0 || ty >= MH) continue;
+      const sy = Math.round(offY + ry * T);
+      for (let rx = 0; rx < cols; rx++) {
+        const tx = x0 + rx; if (tx < 0 || tx >= MW) continue;
+        drawTileObjects(ctx, tx, ty, Math.round(offX + rx * T), sy, T, env);
       }
     }
 
@@ -376,7 +458,7 @@
       for (let rx = 0; rx < cols; rx++) {
         const tx = x0 + rx; if (tx < 0 || tx >= MW) continue;
         const b = biome[idx(tx, ty)];
-        if ((b === B.WATER || b === B.DEEP) && ((tx + ty + tw) % 6) === 0)
+        if ((b === B.WATER || b === B.DEEP || b === B.CLOSE) && ((tx + ty + tw) % 6) === 0)
           ctx.fillRect(Math.round(offX + rx * T) + 1, Math.round(offY + ry * T) + 1 + (tw % 2), Math.max(1, T * 0.35) | 0, 1);
       }
     }

@@ -38,6 +38,15 @@ await type('create intelligent life', 800);
 await type('go to surface', 2000);
 await shot('21-godeye.png');
 
+// zoom in for detailed (tier-2) sprites + bounce-in
+await type('zoom in', 500);
+await type('zoom in', 500);
+await type('zoom in', 900);
+await shot('25-godeye-detail.png');
+await type('zoom out', 400);
+await type('zoom out', 400);
+await type('zoom out', 600);
+
 // shape the surface
 await type('grow a forest', 1200);
 await type('plant cherry trees in the north', 1200);

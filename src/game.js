@@ -34,7 +34,7 @@
   }
 
   // verbs that only make sense on the surface (God Eye)
-  const SURFACE_VERBS = ['forest', 'deforest', 'grass', 'mountains', 'flatten', 'flood', 'drain', 'lava', 'fire', 'village', 'animals'];
+  const SURFACE_VERBS = ['forest', 'deforest', 'grass', 'mountains', 'flatten', 'flood', 'drain', 'lava', 'fire', 'village', 'animals', 'flowers'];
   // space-mode fallbacks when a surface verb is typed while in orbit
   const SPACE_FALLBACK = { flood: { verb: 'climate', params: { type: 'ocean' } }, lava: { verb: 'climate', params: { type: 'volcanic' } }, forest: { verb: 'climate', params: { type: 'jungle' } }, village: { verb: 'civ', params: { age: 'stone age' } }, animals: { verb: 'life' } };
 
@@ -342,6 +342,7 @@
       village: 'Villages take root among the hills.',
       animals: 'Wildlife spreads across the surface.',
       rain: 'Rain sweeps through, dousing the flames.',
+      flowers: 'Wildflowers bloom across the meadows' + where + '.',
     }[verb] || 'The surface reshapes.';
   }
 
@@ -351,8 +352,8 @@
     if (W.view === 'surface' && GC.surface) GC.surface.enter(W.planet);
     R.setLevel(level);
     W.it = 'planet';
-    if (W.view === 'surface' && !wasSurface) C.sys('Descending to the surface — the God Eye opens.');
-    if (W.view !== 'surface' && wasSurface) C.sys('Rising back into orbit.');
+    if (W.view === 'surface' && !wasSurface) { C.sys('Descending to the surface — the God Eye opens.'); if (A.surfaceAmbience) A.surfaceAmbience(true, GC.surface.stats()); }
+    if (W.view !== 'surface' && wasSurface) { C.sys('Rising back into orbit.'); if (A.surfaceAmbience) A.surfaceAmbience(false); }
     C.updateStatus();
   }
 
@@ -381,8 +382,9 @@
     C.dim('views:     SPACE (3D) shapes worlds & cosmos · GOD EYE (2D) shapes the surface');
     C.dim('           say "go to surface" to descend · "return to space" to ascend');
     C.dim('genesis:   let there be light');
-    C.dim('surface:   grow a forest · plant cherry trees in the north · raise mountains · flood the south');
-    C.dim('           make a desert · set fire to the forest · build a village · spawn animals');
+    C.dim('surface:   grow a forest · plant cherry trees in the north · bloom wildflowers · raise mountains');
+    C.dim('           flood the south · make a desert · set fire to the forest · build a village · spawn animals');
+    C.dim('           (scroll / "zoom in" in God Eye to resolve detail — sprites bounce in)');
     C.dim('worlds:    create an ocean planet · make it volcanic · start an ice age · desert · jungle');
     C.dim('physics:   increase gravity to 2G · remove gravity · double the size of the sun');
     C.dim('sky:       add three moons · add rings · make the oceans purple · darker · make it rain · add auroras');

@@ -64,6 +64,7 @@
 
     // surface (God Eye) terrain powers  (fire before forest so "set fire to the forest" burns)
     if (has('set fire', 'wildfire', 'burn', 'ignite')) return { verb: 'fire' };
+    if (has('flower', 'bloom', 'wildflower', 'meadow')) return { verb: 'flowers', params: flowerParam(t) };
     if (has('deforest', 'cut down', 'clear the forest', 'clear the tree', 'chop down')) return { verb: 'deforest' };
     if (has('forest', 'grove', 'woods', 'orchard', 'plant', 'tree', 'jungle')) return { verb: 'forest', params: treeParam(t) };
     if (has('mountain', 'raise the land', 'raise terrain', 'raise mountains', 'hills', 'highlands')) return { verb: 'mountains' };
@@ -185,6 +186,15 @@
     if (/(jungle|tropical|palm)/.test(t)) return { tree: 5 };
     if (/(dead|charred|barren)/.test(t)) return { tree: 6 };
     if (/green/.test(t)) return { tree: 1 };
+    return {};
+  }
+  // flower colour words -> surface flora ids (1 red,2 orange,3 yellow,4 purple,5 pink)
+  function flowerParam(t) {
+    if (/red/.test(t)) return { flowerType: 1 };
+    if (/orange/.test(t)) return { flowerType: 2 };
+    if (/yellow|gold/.test(t)) return { flowerType: 3 };
+    if (/purple|violet/.test(t)) return { flowerType: 4 };
+    if (/pink|rose/.test(t)) return { flowerType: 5 };
     return {};
   }
   function regionFrom(t) {
