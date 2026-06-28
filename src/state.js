@@ -38,6 +38,7 @@
       skyTint: c.sky.slice(),
       moons: [],
       continents: rng.int(4, 7),
+      aurora: false,
       life: { present: false, stage: 0, biodiversity: 0 },
       civ: { present: false, level: 0, age: 'none', population: 0, factions: 1, contacted: false, mood: 'curious', war: false },
     };
@@ -45,7 +46,7 @@
 
   function makeStar(seed) {
     const rng = U.makeRng(seed ^ 0x9e3779b9);
-    return { radius: 0, baseRadius: 48, color: '#ffd27f', temp: 5800, x: 0, y: 0 };
+    return { radius: 0, baseRadius: 48, color: '#ffd27f', temp: 5800, x: 0, y: 0, type: 'main', remnant: null };
   }
 
   /* extra procedural planets for the solar-system view */
@@ -82,6 +83,7 @@
       system: makeSystem(seed),
       galaxySeed: seed ^ 0xabcdef,
       universeSeed: seed ^ 0x0f0f0f0,
+      blackHole: null,
       it: 'planet',
       events: [],
     });
@@ -97,7 +99,7 @@
   };
 
   /* ---- history (undo / redo) ---- */
-  const SNAP_KEYS = ['seed', 'born', 'time', 'cam', 'planet', 'star', 'system', 'galaxySeed', 'universeSeed', 'it'];
+  const SNAP_KEYS = ['seed', 'born', 'time', 'cam', 'planet', 'star', 'system', 'galaxySeed', 'universeSeed', 'blackHole', 'it'];
   const history = { stack: [], idx: -1 };
 
   function serialize() {
@@ -147,9 +149,32 @@
     } catch (e) { return false; }
   };
 
+  World.listSaves = function () {
+    const out = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('godconsole:') === 0) out.push(k.slice('godconsole:'.length));
+      }
+    } catch (e) { /* ignore */ }
+    return out.sort();
+  };
+  World.deleteSave = function (name) {
+    try { localStorage.removeItem('godconsole:' + name); return true; } catch (e) { return false; }
+  };
+
+  /* branching timelines: keep a small in-memory set of named branches */
+  World.branches = [];
+  World.branch = function (label) {
+    World.branches.push({ label: label || ('branch ' + (World.branches.length + 1)), at: World.time.age, snap: serialize() });
+    if (World.branches.length > 12) World.branches.shift();
+    return World.branches[World.branches.length - 1].label;
+  };
+
   World.reset = function () {
     fresh();
     history.stack.length = 0; history.idx = -1;
+    World.branches = [];
   };
 
   GC.World = World;

@@ -125,6 +125,65 @@
         R.burst(innerWidth / 2, innerHeight / 2, 60, 4, [120, 40, 40]); break;
       }
 
+      case 'aurora': {
+        p.aurora = it.params.on;
+        C.sys(it.params.on ? 'Auroras shimmer across the poles.' : 'The auroras fade.'); break;
+      }
+      case 'comet': {
+        R.spawnComet(true); C.sys('A comet streaks across the heavens.'); A.event(); commit = false; break;
+      }
+      case 'blackhole': {
+        W.blackHole = it.params.mode === 'companion'
+          ? { mode: 'companion', r: 22, ang: 0, dist: 280 }
+          : { mode: 'star', r: 34 };
+        if (it.params.mode === 'star') { W.star.type = 'remnant'; }
+        C.sys(it.params.mode === 'companion'
+          ? 'A black hole coils into orbit, devouring stray matter. Tides scream.'
+          : 'The star collapses into a black hole. Light bends around the abyss.');
+        A.event('cataclysm'); R.flash(); break;
+      }
+      case 'supernova': {
+        const sx = innerWidth / 2 - innerWidth * 0.34, sy = innerHeight / 2 - innerHeight * 0.3;
+        R.shockwave(sx, sy, [255, 240, 210], 1.2); R.burst(sx, sy, 220, 9, [255, 220, 170]);
+        C.sys('The star detonates — a supernova floods the system with light and fire.');
+        A.event('cataclysm');
+        setTimeout(() => {
+          W.star.type = 'remnant'; W.star.baseRadius = 18; W.star.color = '#bfe0ff';
+          if (p.life.present && Math.random() < 0.8) exec({ verb: 'extinct' });
+          Sim.emit('Only a dense remnant remains where the star once burned.');
+          W.commit(); C.updateStatus();
+        }, 1800);
+        break;
+      }
+      case 'asteroid': {
+        C.sys('An asteroid falls toward the world...');
+        R.asteroid(() => {
+          const lethal = p.life.present && Math.random() < 0.6;
+          if (lethal) { exec({ verb: 'extinct' }); Sim.emit('The impact triggers a mass extinction.'); }
+          else { Sim.emit('Impact! Dust veils the sky for a generation.'); p.weather = 'ash'; }
+          W.commit(); C.updateStatus();
+        });
+        commit = false; break;
+      }
+
+      case 'branch': {
+        const label = W.branch(it.params.label);
+        C.sys(`Timeline branched: "${label}" (at ${U.fmt(W.time.age)} yr). Saved ${W.branches.length} branch${W.branches.length > 1 ? 'es' : ''}.`);
+        commit = false; break;
+      }
+      case 'duplicate': {
+        const sys = W.system;
+        sys.planets.push({ dist: 90 + sys.planets.length * 70, ang: Math.random() * 6.28, speed: 0.12, r: 14, color: p.oceanColor, rings: p.hasRings });
+        C.sys('A twin world condenses in a neighboring orbit.'); break;
+      }
+      case 'universes': {
+        const saves = W.listSaves();
+        if (GC.ui && GC.ui.openBrowser) GC.ui.openBrowser();
+        C.dim(saves.length ? 'Saved universes: ' + saves.join(', ') : 'No saved universes yet. Type "save <name>".');
+        commit = false; break;
+      }
+      case 'whatif': { whatIf(it.params.raw); commit = false; break; }
+
       case 'newPlanet': {
         Object.assign(p, GC.data.makePlanet((Math.random() * 1e9) | 0, it.params.type));
         p.radius = 0; p._texKey = null; W.it = 'planet'; setLevel(9);
@@ -141,6 +200,44 @@
     }
     if (commit) W.commit();
     C.updateStatus();
+  }
+
+  /* sandbox experiments: map "what if X" to a plausible chain of consequences */
+  function whatIf(raw) {
+    const t = raw || '';
+    const h = (...w) => w.some((x) => t.includes(x));
+    C.sys('Simulating: "' + t.replace(/^.*?what if/i, 'what if').trim() + '"');
+    const after = [];
+    if (h('10x', 'ten times', 'high gravity', 'gravity was 10', 'much stronger gravity')) {
+      exec({ verb: 'gravity', params: { g: 10 } });
+      after.push('Mountains flatten under their own weight. Nothing taller than a shrub survives.', 'Flight becomes impossible. Bones thicken across every species.');
+    } else if (h('no gravity', 'gravity disappear', 'gravity was gone', 'without gravity')) {
+      exec({ verb: 'gravity', params: { g: 0 } });
+      after.push('Oceans lift into drifting spheres. The atmosphere bleeds into space.');
+    } else if (h('oxygen', 'no air', 'air disappear')) {
+      W.planet.atmosphere = 0.05; W.planet.weather = 'clear';
+      if (W.planet.life.present) exec({ verb: 'extinct' });
+      after.push('Fires gutter out instantly. Every breathing thing suffocates within minutes.', 'Only anaerobic microbes cling on in the deep.');
+    } else if (h('dinosaur', 'dinos survived')) {
+      if (!W.planet.life.present) Sim.spawnLife();
+      after.push('The asteroid misses. Reptilian megafauna keep their throne.', 'Mammals stay small and nocturnal for another hundred million years.');
+    } else if (h('ring')) {
+      exec({ verb: 'rings', params: { on: true } });
+      after.push('A brilliant arc splits the night sky from every horizon.', 'Eternal twilight shadows fall where the rings eclipse the sun.');
+    } else if (h('black hole')) {
+      exec({ verb: 'blackhole', params: { mode: 'companion' } });
+      after.push('Tides rise to swallow coastlines twice a day.', 'Time itself runs slower on the side facing the abyss.');
+    } else if (h('no sun', 'sun disappear', 'star disappear', 'without the sun')) {
+      setClimate('ice'); W.planet.skyTint = [2, 2, 6];
+      after.push('Darkness falls in eight minutes. Within a week the oceans skin over with ice.', 'Photosynthesis ends. The food chain collapses from the bottom up.');
+    } else if (h('two sun', 'binary', 'second sun', 'twin sun')) {
+      exec({ verb: 'sun', params: { mul: 1.4 } });
+      after.push('Double shadows fall at noon. Seasons grow chaotic and long.');
+    } else {
+      after.push('Reality runs the experiment... the consequences ripple outward in ways even I cannot fully predict.', 'Try a sharper premise — "what if gravity was 10x?" or "what if oxygen disappeared?"');
+    }
+    after.forEach((line, i) => setTimeout(() => Sim.emit(line), 700 + i * 900));
+    W.commit();
   }
 
   function addMoon() {
@@ -212,11 +309,14 @@
     C.dim('genesis:   let there be light');
     C.dim('worlds:    create an ocean planet · make it volcanic · start an ice age · desert · jungle');
     C.dim('physics:   increase gravity to 2G · remove gravity · double the size of the sun');
-    C.dim('sky:       add three moons · add rings · make the oceans purple · darker · make it rain');
+    C.dim('sky:       add three moons · add rings · make the oceans purple · darker · make it rain · add auroras');
     C.dim('life:      create life · create intelligent life · start a war · cause mass extinction');
+    C.dim('cosmos:    spawn a comet · create a black hole · a black hole orbits the moon · trigger a supernova · strike with an asteroid');
+    C.dim('sandbox:   what if gravity was 10x? · what if oxygen disappeared? · what if dinosaurs survived?');
     C.dim('time:      accelerate time · advance one million years · pause · resume');
     C.dim('zoom:      zoom out · zoom in · go to galaxy · view surface · zoom to atom');
-    C.dim('meta:      undo · redo · save · load · reset · /key (enable AI interpreter)');
+    C.dim('worldsmgmt: branch timeline · duplicate this planet · save <name> · load <name> · universes');
+    C.dim('meta:      undo · redo · reset · /key (enable AI interpreter)');
   }
 
   /* ---------------- input ---------------- */
@@ -283,6 +383,7 @@
     consoleEl = document.getElementById('console');
     R.init(canvas);
     C.init({ log: document.getElementById('log'), status: document.getElementById('status'), zoom: document.getElementById('zoom') });
+    if (GC.ui) GC.ui.init();
 
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {

@@ -60,11 +60,115 @@
   };
   function drawParticles() {
     for (const p of particles) {
+      if (p.pull) {
+        const dx = p.pull.x - p.x, dy = p.pull.y - p.y, d = Math.hypot(dx, dy) + 1;
+        p.vx += (dx / d) * 0.6; p.vy += (dy / d) * 0.6;
+      }
       p.x += p.vx; p.y += p.vy; p.vx *= 0.99; p.vy *= 0.99; p.life -= p.decay;
       ctx.fillStyle = U.rgbStr(p.c, U.clamp(p.life, 0, 1));
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, U.TAU); ctx.fill();
     }
     for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  /* ====================================================================
+     COSMIC EFFECTS — transient, render-owned (do not affect undo state)
+     ==================================================================== */
+  const comets = [], shockwaves = [], flyers = [];
+  let flash = 0;
+
+  R.spawnComet = function (loud) {
+    const fromLeft = Math.random() < 0.5;
+    const y = U.rand(0.1, 0.55) * H;
+    const sp = U.rand(3, 6);
+    comets.push({
+      x: fromLeft ? -40 : W + 40, y,
+      vx: (fromLeft ? 1 : -1) * sp, vy: U.rand(0.4, 1.4),
+      life: 1, trail: [],
+    });
+    if (loud) flash = Math.min(1, flash + 0.15);
+  };
+  R.shockwave = function (x, y, color, power) {
+    shockwaves.push({ x, y, r: 0, max: (power || 1) * Math.max(W, H) * 0.7, life: 1, c: color || [255, 230, 200] });
+    flash = 1;
+  };
+  R.asteroid = function (onImpact) {
+    const fromLeft = Math.random() < 0.5;
+    flyers.push({
+      x: fromLeft ? -30 : W + 30, y: U.rand(0, 0.4) * H,
+      tx: CX, ty: CY, t: 0, onImpact, r: U.rand(5, 10),
+    });
+  };
+  R.flash = function () { flash = Math.min(1, flash + 0.6); };
+
+  function drawComets(t) {
+    for (const c of comets) {
+      c.x += c.vx; c.y += c.vy; c.life -= 0.004;
+      c.trail.push({ x: c.x, y: c.y }); if (c.trail.length > 18) c.trail.shift();
+      for (let i = 0; i < c.trail.length; i++) {
+        const a = (i / c.trail.length) * 0.6 * c.life;
+        ctx.fillStyle = `rgba(200,225,255,${a})`;
+        const tp = c.trail[i];
+        ctx.beginPath(); ctx.arc(tp.x, tp.y, (i / c.trail.length) * 2.4, 0, U.TAU); ctx.fill();
+      }
+      ctx.fillStyle = `rgba(255,255,255,${c.life})`;
+      ctx.beginPath(); ctx.arc(c.x, c.y, 2.4, 0, U.TAU); ctx.fill();
+    }
+    for (let i = comets.length - 1; i >= 0; i--)
+      if (comets[i].life <= 0 || comets[i].x < -60 || comets[i].x > W + 60) comets.splice(i, 1);
+  }
+  function drawShockwaves() {
+    for (const s of shockwaves) {
+      s.r = U.lerp(s.r, s.max, 0.04); s.life -= 0.012;
+      ctx.strokeStyle = U.rgbStr(s.c, U.clamp(s.life, 0, 1) * 0.6);
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, U.TAU); ctx.stroke();
+      ctx.strokeStyle = U.rgbStr(s.c, U.clamp(s.life, 0, 1) * 0.25);
+      ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.92, 0, U.TAU); ctx.stroke();
+    }
+    for (let i = shockwaves.length - 1; i >= 0; i--) if (shockwaves[i].life <= 0) shockwaves.splice(i, 1);
+  }
+  function drawFlyers() {
+    for (const f of flyers) {
+      f.t += 0.012;
+      f.x = U.lerp(f.x, f.tx, f.t * 0.06 + 0.01);
+      f.y = U.lerp(f.y, f.ty, f.t * 0.06 + 0.01);
+      // glowing trail
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 3);
+      g.addColorStop(0, 'rgba(255,200,140,0.9)'); g.addColorStop(1, 'rgba(255,120,60,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 3, 0, U.TAU); ctx.fill();
+      ctx.fillStyle = '#3a2a22'; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, U.TAU); ctx.fill();
+      if (U.dist(f.x, f.y, f.tx, f.ty) < 20) {
+        R.shockwave(f.tx, f.ty, [255, 160, 80], 0.5);
+        R.burst(f.tx, f.ty, 90, 6, [255, 150, 80]);
+        if (f.onImpact) f.onImpact();
+        f.done = true;
+      }
+    }
+    for (let i = flyers.length - 1; i >= 0; i--) if (flyers[i].done) flyers.splice(i, 1);
+  }
+
+  function drawBlackHole(cx, cy, r, t) {
+    // accretion disk
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(0.5);
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * U.TAU + t * 0.8;
+      const rr = r * (1.6 + (i % 7) * 0.12);
+      const x = Math.cos(a) * rr, y = Math.sin(a) * rr * 0.32;
+      const hue = 25 + (i % 30);
+      ctx.fillStyle = U.rgbStr(U.hsl(hue, 1, 0.6), 0.5);
+      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, U.TAU); ctx.fill();
+    }
+    ctx.restore();
+    // photon ring
+    const pg = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.5);
+    pg.addColorStop(0, 'rgba(0,0,0,0)');
+    pg.addColorStop(0.7, 'rgba(255,200,140,0.0)');
+    pg.addColorStop(0.85, 'rgba(255,220,170,0.8)');
+    pg.addColorStop(1, 'rgba(255,200,140,0)');
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(cx, cy, r * 1.5, 0, U.TAU); ctx.fill();
+    // event horizon (pure black)
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, U.TAU); ctx.fill();
   }
 
   /* ====================================================================
@@ -217,6 +321,24 @@
       }
       ctx.globalCompositeOperation = 'source-over';
     }
+    // aurora near the poles
+    if (p.aurora) {
+      ctx.globalCompositeOperation = 'lighter';
+      const tt = (R._t || 0);
+      for (const pole of [-1, 1]) {
+        for (let b = 0; b < 3; b++) {
+          ctx.strokeStyle = U.rgbStr(U.hsl(120 + b * 30 + Math.sin(tt + b) * 20, 0.8, 0.6), 0.16);
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          for (let x = -r; x <= r; x += 6) {
+            const yy = cy + pole * r * (0.62 + b * 0.07) + Math.sin(x * 0.05 + tt * 2 + b) * 6;
+            if (x === -r) ctx.moveTo(cx + x, yy); else ctx.lineTo(cx + x, yy);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
     ctx.restore();
 
     // atmosphere rim
@@ -290,8 +412,10 @@
   function scenePlanet(W_, t) {
     const p = W_.planet;
     drawSpaceBg(p.skyTint, t);
-    // the star, off to the side
-    drawStar(CX - W * 0.34, CY - H * 0.3, W_.star.baseRadius * 0.7, W_.star.color);
+    const bh = W_.blackHole;
+    // the star (or its replacement), off to the side
+    if (bh && bh.mode === 'star') drawBlackHole(CX - W * 0.34, CY - H * 0.3, bh.r || 30, t);
+    else drawStar(CX - W * 0.34, CY - H * 0.3, W_.star.baseRadius * 0.7, W_.star.color);
     const r = U.clamp(p.baseRadius, 10, Math.min(W, H) * 0.34);
     p.radius = U.lerp(p.radius, r, 0.06);
     drawRings(CX, CY, p.radius, p, false);
@@ -309,11 +433,21 @@
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mx, my, Math.max(1, mr), 0, U.TAU); ctx.fill();
       ctx.globalAlpha = 1;
     }
+    // companion black hole orbiting the world, devouring nearby matter
+    if (bh && bh.mode === 'companion') {
+      bh.ang = (bh.ang || 0) + 0.004;
+      const bx = CX + Math.cos(bh.ang) * (bh.dist || 260);
+      const by = CY + Math.sin(bh.ang) * (bh.dist || 260) * 0.6;
+      if (Math.random() < 0.4) particles.push({ x: bx + U.rand(-60, 60), y: by + U.rand(-60, 60), vx: 0, vy: 0, life: 1, decay: 0.05, r: 1.5, c: [255, 180, 120], pull: { x: bx, y: by } });
+      drawBlackHole(bx, by, bh.r || 22, t);
+    }
   }
 
   function sceneSystem(W_, t) {
     drawSpaceBg([4, 6, 12], t);
-    drawStar(CX, CY, W_.star.baseRadius * 0.8, W_.star.color);
+    const bh = W_.blackHole;
+    if (bh && bh.mode === 'star') drawBlackHole(CX, CY, (bh.r || 30) * 1.4, t);
+    else drawStar(CX, CY, W_.star.baseRadius * 0.8, W_.star.color);
     const sys = W_.system;
     for (let i = 0; i < sys.planets.length; i++) {
       const sp = sys.planets[i];
@@ -569,7 +703,7 @@
   let lastT = 0;
   R.draw = function (now) {
     const W_ = GC.World;
-    const t = now / 1000; lastT = t;
+    const t = now / 1000; lastT = t; R._t = t;
     ctx.clearRect(0, 0, W, H);
 
     if (!W_.born) {
@@ -611,6 +745,20 @@
     }
     drawParticles();
 
+    // cosmic effects (screen space, above scene)
+    drawShockwaves();
+    drawFlyers();
+    // ambient comets when looking at space
+    if (cam.level >= 9 && Math.random() < 0.003) R.spawnComet(false);
+    if (cam.level >= 9) drawComets(t);
+
+    // global flash (supernova / impact)
+    if (flash > 0.001) {
+      ctx.fillStyle = `rgba(255,250,240,${flash * 0.6})`;
+      ctx.fillRect(0, 0, W, H);
+      flash *= 0.88;
+    }
+
     // vignette
     const vg = ctx.createRadialGradient(CX, CY, Math.min(W, H) * 0.4, CX, CY, Math.max(W, H) * 0.75);
     vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
@@ -623,10 +771,6 @@
     cam.fromLevel = cam.level;
     cam.level = newLevel;
     cam.transition = 0;
-  };
-
-  R.flash = function () { /* used on big events */
-    R.burst(CX, CY, 40, 4);
   };
 
   GC.render = R;

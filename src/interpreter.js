@@ -36,6 +36,24 @@
       return { verb: 'genesis', params: { phrase: t } };
     }
 
+    // what-if sandbox experiments (check early so "what if gravity..." routes here)
+    if (has('what if', 'what would happen', 'imagine if')) return { verb: 'whatif', params: { raw: t } };
+
+    // cosmic objects & cataclysms
+    if (has('black hole', 'blackhole', 'singularity')) {
+      const mode = has('moon', 'orbit', 'companion', 'near') ? 'companion' : 'star';
+      return { verb: 'blackhole', params: { mode } };
+    }
+    if (has('supernova', 'explode the star', 'detonate the star', 'star explode')) return { verb: 'supernova' };
+    if (has('comet', 'shooting star')) return { verb: 'comet' };
+    if (has('asteroid', 'meteor', 'impact', 'strike the planet')) return { verb: 'asteroid' };
+    if (has('aurora', 'northern lights')) return { verb: 'aurora', params: { on: !has('remove', 'no ') } };
+
+    // timelines / duplication
+    if (has('branch')) return { verb: 'branch', params: { label: nameAfter(t, 'branch') } };
+    if (has('duplicate', 'clone', 'copy this planet', 'copy the planet')) return { verb: 'duplicate' };
+    if (has('list universe', 'universes', 'show saves', 'saved universes', 'my universes')) return { verb: 'universes' };
+
     // meta / control
     if (has('undo', 'revert', 'go back')) return { verb: 'undo' };
     if (has('redo')) return { verb: 'redo' };
@@ -137,8 +155,9 @@
 
   function nameAfter(t, kw) {
     const i = t.indexOf(kw);
-    const rest = t.slice(i + kw.length).replace(/\b(this|the|my|universe|as)\b/g, '').trim();
-    return rest || 'autosave';
+    const FILLER = { this: 1, the: 1, my: 1, universe: 1, as: 1, timeline: 1, called: 1, it: 1 };
+    const tokens = t.slice(i + kw.length).trim().split(/\s+/).filter((w) => w && !FILLER[w]);
+    return tokens.join(' ') || (kw === 'branch' ? '' : 'autosave');
   }
   function ageFrom(t) {
     for (const a of GC.data.CIV_AGES) if (a !== 'none' && t.includes(a.split(' ')[0])) return a;
@@ -178,7 +197,7 @@
   I.parseLLM = async function (raw) {
     const key = localStorage.getItem('godconsole:apikey');
     if (!key) return [I.parse(raw)];
-    const verbs = "genesis,undo,redo,save,load,reset,help,time(scale),zoom(d),zoomTo(level 0-12),gravity(g),moon(count),removeMoon,rings(on),sun(mul),starColor(color hex),climate(type: temperate|ocean|ice|volcanic|desert|jungle|barren),weather(w: clear|rain|snow|storm),clouds(d),ocean(color),land(color),sky(color),brightness(d),life,civ(age),war(on),extinct,newPlanet(type,desc)";
+    const verbs = "genesis,undo,redo,save,load,reset,help,time(scale),zoom(d),zoomTo(level 0-12),gravity(g),moon(count),removeMoon,rings(on),sun(mul),starColor(color hex),climate(type: temperate|ocean|ice|volcanic|desert|jungle|barren),weather(w: clear|rain|snow|storm),clouds(d),ocean(color),land(color),sky(color),brightness(d),life,civ(age),war(on),extinct,newPlanet(type,desc),blackhole(mode: star|companion),supernova,comet,asteroid,aurora(on),branch(label),duplicate";
     const sys = `You are the natural-language interpreter for a god-game. Convert the player's sentence into a JSON array of intent objects the engine can run. Allowed verbs and params: ${verbs}. Colors must be hex. Respond with ONLY a JSON array, e.g. [{"verb":"climate","params":{"type":"ice"}}].`;
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {

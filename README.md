@@ -51,13 +51,29 @@ required). A taste:
 | **Physics** | `increase gravity to 2G` · `remove gravity` · `double the size of the sun` |
 | **Sky** | `add three moons` · `add rings` · `make the oceans purple` · `make it rain` · `darker` |
 | **Life** | `create life` · `create intelligent life` · `start a war` · `cause a mass extinction` |
+| **Cosmos** | `spawn a comet` · `create a black hole` · `a black hole orbits the moon` · `trigger a supernova` · `strike the planet with an asteroid` · `add auroras` |
+| **Sandbox** | `what if gravity was 10x?` · `what if oxygen disappeared?` · `what if dinosaurs survived?` · `what if Earth had rings?` |
 | **Time** | `accelerate time` · `advance one million years` · `pause` · `resume` |
 | **Zoom** | `zoom out` · `go to galaxy` · `view surface` · `zoom to atom` (or scroll the wheel) |
-| **Meta** | `undo` · `redo` · `save` · `load` · `reset` · `help` |
+| **Universes** | `branch timeline` · `duplicate this planet` · `save <name>` · `load <name>` · `universes` |
+| **Meta** | `undo` · `redo` · `reset` · `help` |
 
 Pronouns work: after `create an earth-like planet`, you can say `make it
-colder` and the engine knows what *it* is. The UI fades while you observe and
+colder` and the engine knows what *it* is. Start typing and an **autocomplete
+bar** suggests commands — `Tab` to complete. The UI fades while you observe and
 returns the moment you act.
+
+### Cataclysms & sandbox
+
+![Black hole](assets/12-blackhole.png)
+
+`what if X` runs a plausible chain of consequences with narration — e.g. *what
+if gravity was 10x?* flattens mountains and grounds all flight; *what if oxygen
+disappeared?* snuffs fire and ends complex life. Supernovae leave stellar
+remnants; asteroid impacts can trigger mass extinctions. `branch timeline`
+snapshots the present so you can explore an alternate future and `jump` back;
+the **universe browser** (`universes`) lists saved worlds and timeline branches
+to load.
 
 ## The zoom ladder
 
@@ -106,7 +122,8 @@ sentence ─▶ interpreter ─▶ intent {verb, params} ─▶ game.exec ─▶
 | `src/render.js` | Renderer | camera + per-scale scenes; procedural **spherical** planets via orthographic column sampling |
 | `src/audio.js` | — | generative Web Audio ambient + event tones (no asset files) |
 | `src/companion.js` | Companion | calm OS-style readouts and the live status panel |
-| `src/game.js` | — | genesis sequence, command dispatch, input/history, main loop |
+| `src/ui.js` | — | autocomplete suggestion bar + saved-universe browser panel |
+| `src/game.js` | — | genesis sequence, command dispatch, what-if engine, input/history, main loop |
 
 The key design bet: **the AI never renders pixels.** It interprets and
 describes; a deterministic engine builds. That keeps it responsive and lets the
@@ -140,16 +157,19 @@ node test/smoke.mjs      # requires playwright + a chromium build
 
 **Done**
 - Void → prompt → progressive genesis
-- Procedural 3D-shaded planets, rings, moons, atmosphere, day/night, weather
+- Procedural 3D-shaded planets, rings, moons, atmosphere, day/night, weather, auroras
 - Full zoom ladder (quantum → universe), each a distinct scene
-- Deep deterministic interpreter + pronoun memory + LLM seam
+- Deep deterministic interpreter + pronoun memory + autocomplete + LLM seam
 - Simulation: time scaling, gravity, climate, life, civilizations, first contact
+- Cosmic objects & cataclysms: comets, black holes, supernovae, asteroid impacts
+- "What if" sandbox experiments with consequence narration
+- Branching timelines + saved-universe browser
 - Generative ambient audio, undo/redo, save/load, command history
 
 **Next**
-- Branching timelines and a universe browser
 - Multiplayer shared universes
 - 3D (WebGL/WebGPU) renderer behind the same scene interface
+- Selectable focus across multiple planets in a system
 
 **Research-tier (kept honest)**
 - Real-time arbitrary 3D geometry from text

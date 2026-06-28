@@ -14,11 +14,18 @@
 
   <div id="zoom"></div>
   <div id="status"></div>
-  <div id="tips">scroll to zoom &nbsp;·&nbsp; ↑/↓ command history &nbsp;·&nbsp; type &ldquo;help&rdquo;</div>
+  <div id="tips">scroll to zoom &nbsp;·&nbsp; Tab to autocomplete &nbsp;·&nbsp; ↑/↓ history &nbsp;·&nbsp; &ldquo;universes&rdquo; / &ldquo;help&rdquo;</div>
+
+  <div id="browser" class="hidden">
+    <div class="bro-head">SAVED UNIVERSES <span id="bro-close">×</span></div>
+    <div id="bro-list"></div>
+    <div class="bro-foot"><input id="bro-name" placeholder="name…" /><button id="bro-save">save current</button></div>
+  </div>
 
   <div id="console">
     <div class="rule">───────────────────────────────────────────────────────────────────────────────</div>
     <div id="log"></div>
+    <div id="suggest"></div>
     <div id="promptRow">
       <span class="caret">&gt;</span>
       <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
@@ -35,6 +42,7 @@
   <script src="src/interpreter.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/companion.js"></script>
+  <script src="src/ui.js"></script>
   <script src="src/game.js"></script>
 </body>
 </html>

@@ -68,3 +68,40 @@ body {
 @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 
 #tips { position: fixed; bottom: 6px; right: 16px; font-size: 10px; color: #3a3a3a; z-index: 9; letter-spacing: 1px; }
+
+/* autocomplete suggestion bar */
+#suggest { display: none; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+#suggest.show { display: flex; }
+.sug {
+  font-size: 11px; color: var(--dim); padding: 3px 9px; cursor: pointer;
+  border: 1px solid rgba(120,140,170,0.18); border-radius: 12px;
+  background: rgba(120,160,220,0.05); transition: all .15s ease; white-space: nowrap;
+}
+.sug:hover { color: var(--fg); border-color: rgba(159,210,255,0.4); }
+.sug.active { color: var(--accent); border-color: rgba(159,210,255,0.55); background: rgba(159,210,255,0.08); }
+
+/* saved-universe browser */
+#browser {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 320px; z-index: 20;
+  background: rgba(8,10,16,0.92); backdrop-filter: blur(8px);
+  border-left: 1px solid rgba(120,140,170,0.18);
+  padding: 18px; display: flex; flex-direction: column; gap: 10px;
+  transition: transform .35s ease;
+}
+#browser.hidden { transform: translateX(105%); }
+.bro-head { font-size: 12px; letter-spacing: 2px; color: var(--accent); display: flex; justify-content: space-between; }
+#bro-close { cursor: pointer; color: var(--dim); font-size: 18px; line-height: 1; }
+#bro-close:hover { color: var(--fg); }
+#bro-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; }
+.bro-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg); }
+.bro-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bro-empty { font-size: 11px; color: var(--dim); margin-top: 6px; }
+#browser button {
+  background: rgba(159,210,255,0.08); color: var(--accent); border: 1px solid rgba(159,210,255,0.25);
+  border-radius: 6px; padding: 3px 9px; font: inherit; font-size: 11px; cursor: pointer;
+}
+#browser button:hover { background: rgba(159,210,255,0.16); }
+#browser button.del { color: var(--err); border-color: rgba(200,123,123,0.3); padding: 3px 7px; }
+.bro-foot { display: flex; gap: 6px; }
+#bro-name { flex: 1; background: rgba(255,255,255,0.04); border: 1px solid rgba(120,140,170,0.2);
+  border-radius: 6px; color: var(--fg); font: inherit; font-size: 12px; padding: 4px 8px; outline: none; }
