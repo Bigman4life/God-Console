@@ -33,12 +33,50 @@
     for (const [d, fn] of stages) setTimeout(fn, d);
   }
 
+  // verbs that only make sense on the surface (God Eye)
+  const SURFACE_VERBS = ['forest', 'deforest', 'grass', 'mountains', 'flatten', 'flood', 'drain', 'lava', 'fire', 'village', 'animals'];
+  // space-mode fallbacks when a surface verb is typed while in orbit
+  const SPACE_FALLBACK = { flood: { verb: 'climate', params: { type: 'ocean' } }, lava: { verb: 'climate', params: { type: 'volcanic' } }, forest: { verb: 'climate', params: { type: 'jungle' } }, village: { verb: 'civ', params: { age: 'stone age' } }, animals: { verb: 'life' } };
+
+  // translate a parsed intent into a surface op while in God Eye
+  function surfaceTranslate(it) {
+    const p = it.params || {};
+    switch (it.verb) {
+      case 'climate': return { verb: { ocean: 'flood', ice: 'snow', volcanic: 'lava', desert: 'desert', jungle: 'forest', temperate: 'grass', barren: 'grass' }[p.type] || 'grass', params: { region: p.region, tree: p.type === 'jungle' ? 5 : undefined } };
+      case 'weather': return { verb: p.w === 'snow' ? 'snow' : (p.w === 'rain' || p.w === 'storm') ? 'rain' : null, params: p };
+      case 'life': return { verb: 'animals', params: p };
+      case 'civ': return { verb: 'village', params: p };
+      case 'extinct': return { verb: 'fire', params: { region: p.region } };
+      case 'asteroid': return { verb: 'fire', params: {} };
+      default: return it; // forest, mountains, flood, etc. pass straight through
+    }
+  }
+
   /* ---------------- intent execution ---------------- */
   function exec(it) {
     const p = W.planet;
     let commit = true;
+
+    // ---- God Eye: route creation/terrain commands to the surface ----
+    if (W.view === 'surface') {
+      const sit = surfaceTranslate(it);
+      if (sit && sit.verb && GC.surface.handle(sit)) {
+        C.sys(surfaceLine(sit.verb, sit.params));
+        A.event(sit.verb === 'fire' || sit.verb === 'lava' ? 'cataclysm' : 'create');
+        C.updateStatus();
+        return; // surface edits aren't part of undo history (yet)
+      }
+      // otherwise fall through: meta verbs (zoom, time, undo, ascend, ...) still work
+    } else if (SURFACE_VERBS.indexOf(it.verb) >= 0) {
+      if (SPACE_FALLBACK[it.verb]) it = SPACE_FALLBACK[it.verb];
+      else { C.dim('That shapes the land itself — say "go to surface" to enter the God Eye first.'); return; }
+    }
+
     switch (it.verb) {
       case 'genesis': genesis(it.params && it.params.phrase); commit = false; break;
+
+      case 'descend': setLevel(8); commit = false; break;
+      case 'ascend': setLevel(9); commit = false; break;
 
       case 'undo': {
         const ok = W.undo(); p && (p._texKey = null); W.planet._texKey = null;
@@ -72,12 +110,21 @@
             : `Time accelerated — ${U.fmt(it.params.scale)} years per second.`);
         commit = false; break;
       }
-      case 'zoom': { setLevel(U.clamp(W.cam.level + it.params.d, 0, 12)); commit = false; break; }
+      case 'zoom': {
+        // walk the main ladder: Surface(8) <-> Planet(9) <-> System(10) <-> Galaxy(11) <-> Universe(12)
+        if (W.view === 'surface') {
+          if (it.params.d > 0) setLevel(9);              // zoom out -> back to orbit
+          else GC.surface.zoomBy(1.4);                   // zoom in -> magnify the map
+        } else {
+          setLevel(U.clamp(W.cam.level + it.params.d, 8, 12));
+        }
+        commit = false; break;
+      }
       case 'zoomTo': { setLevel(U.clamp(it.params.level, 0, 12)); commit = false; break; }
 
       case 'gravity': {
         p.gravity = it.params.g;
-        if (p.gravity === 0) { C.sys('Gravity removed. Matter drifts free.'); R.burst(innerWidth / 2, innerHeight / 2, 80, 3, U.hexRgb(p.landColor)); }
+        if (p.gravity === 0) { C.sys('Gravity removed. Matter drifts free.'); (function(c){R.burst(c.x,c.y,80,3,U.hexRgb(p.landColor));})(R.center()); }
         else C.sys(`Gravity set to ${p.gravity}G. The world adjusts.`);
         break;
       }
@@ -122,7 +169,7 @@
         p.civ = { present: false, level: 0, age: 'none', population: 0, factions: 1, contacted: false, mood: 'curious', war: false };
         p._ms = {};
         C.sys('A mass extinction. The world falls silent.'); A.event('cataclysm');
-        R.burst(innerWidth / 2, innerHeight / 2, 60, 4, [120, 40, 40]); break;
+        (function(c){R.burst(c.x,c.y,60,4,[120,40,40]);})(R.center()); break;
       }
 
       case 'aurora': {
@@ -278,16 +325,41 @@
     return { clear: 'The skies clear.', rain: 'Rain begins to fall.', snow: 'Snow drifts down.', storm: 'Storm clouds gather; lightning splits the sky.' }[w] || 'The weather turns.';
   }
 
+  function surfaceLine(verb, params) {
+    const where = params && params.region ? ' in the ' + params.region : '';
+    return {
+      forest: 'Forests spread across the land' + where + '.',
+      deforest: 'The trees are cleared' + where + '.',
+      grass: 'Green plains roll out' + where + '.',
+      desert: 'Sands bury the land' + where + '.',
+      snow: 'Snow blankets the ground' + where + '.',
+      mountains: 'Mountains heave upward' + where + '.',
+      flatten: 'The land is leveled' + where + '.',
+      flood: 'Waters rise and drown the lowlands' + where + '.',
+      drain: 'The seas recede, baring the seabed.',
+      lava: 'Lava bursts through the crust' + where + '.',
+      fire: 'Wildfire races across the land' + where + '.',
+      village: 'Villages take root among the hills.',
+      animals: 'Wildlife spreads across the surface.',
+      rain: 'Rain sweeps through, dousing the flames.',
+    }[verb] || 'The surface reshapes.';
+  }
+
   function setLevel(level) {
+    const wasSurface = W.view === 'surface';
+    W.view = level === 8 ? 'surface' : 'space';
+    if (W.view === 'surface' && GC.surface) GC.surface.enter(W.planet);
     R.setLevel(level);
-    W.it = level === 9 ? 'planet' : W.it;
+    W.it = 'planet';
+    if (W.view === 'surface' && !wasSurface) C.sys('Descending to the surface — the God Eye opens.');
+    if (W.view !== 'surface' && wasSurface) C.sys('Rising back into orbit.');
     C.updateStatus();
   }
 
   function bigCrunch() {
     C.sys('The universe collapses to a point...');
     A.event('cataclysm');
-    R.burst(innerWidth / 2, innerHeight / 2, 200, 8, [255, 230, 200]);
+    (function(c){R.burst(c.x,c.y,200,8,[255,230,200]);})(R.center());
     setTimeout(() => {
       W.reset();
       C.dim('— void —');
@@ -306,7 +378,11 @@
 
   function showHelp() {
     C.dim('— GOD CONSOLE — language is the interface —');
+    C.dim('views:     SPACE (3D) shapes worlds & cosmos · GOD EYE (2D) shapes the surface');
+    C.dim('           say "go to surface" to descend · "return to space" to ascend');
     C.dim('genesis:   let there be light');
+    C.dim('surface:   grow a forest · plant cherry trees in the north · raise mountains · flood the south');
+    C.dim('           make a desert · set fire to the forest · build a village · spawn animals');
     C.dim('worlds:    create an ocean planet · make it volcanic · start an ice age · desert · jungle');
     C.dim('physics:   increase gravity to 2G · remove gravity · double the size of the sun');
     C.dim('sky:       add three moons · add rings · make the oceans purple · darker · make it rain · add auroras');
@@ -368,6 +444,7 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     Sim.tick(dt);
+    if (W.view === 'surface' && GC.surface) GC.surface.tick(dt, W.time.paused ? 0 : W.time.scale);
     R.draw(now);
     statusTick = (statusTick + 1) % 12;
     if (statusTick === 0) C.updateStatus();
@@ -401,7 +478,7 @@
     addEventListener('wheel', (e) => {
       if (!W.born) return;
       if (Math.abs(e.deltaY) < 2) return;
-      setLevel(U.clamp(W.cam.level + (e.deltaY > 0 ? 1 : -1), 0, 12));
+      exec({ verb: 'zoom', params: { d: e.deltaY > 0 ? 1 : -1 } });
     }, { passive: true });
     poke();
     input.focus();

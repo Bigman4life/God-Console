@@ -11,10 +11,19 @@
 
 Type a sentence and watch reality assemble itself — light, stars, a living
 world, weather, life, civilizations that evolve through the ages and
-eventually *look back at you through the console*. Zoom from quantum foam out
-to the observable universe. Everything is editable; nothing is permanent.
+eventually *look back at you through the console*. Everything is editable;
+nothing is permanent.
 
-![Genesis](assets/01-genesis.png)
+A **pixel-art god game** with two macro-views:
+
+- **SPACE** — a 3D-feeling pixel cosmos: glowing planets, nebula swirls,
+  galaxies, asteroids, moons, black holes. Commands here shape whole worlds.
+- **GOD EYE** — say *"go to surface"* to descend into a top-down 2D tilemap of
+  the planet (WorldBox style). Here every command acts **only on the surface**:
+  grow forests, raise mountains, flood valleys, set wildfires, build villages.
+
+![Space](assets/20-space-planet.png)
+![God Eye](assets/21-godeye.png)
 
 ## Run it
 
@@ -51,6 +60,8 @@ required). A taste:
 | **Physics** | `increase gravity to 2G` · `remove gravity` · `double the size of the sun` |
 | **Sky** | `add three moons` · `add rings` · `make the oceans purple` · `make it rain` · `darker` |
 | **Life** | `create life` · `create intelligent life` · `start a war` · `cause a mass extinction` |
+| **Views** | `go to surface` / `descend` (God Eye) · `return to space` / `ascend` |
+| **Surface** (God Eye) | `grow a forest` · `plant cherry trees in the north` · `raise mountains in the east` · `flood the south` · `drain the sea` · `make a desert` · `set fire to the forest` · `build a village` · `spawn animals` |
 | **Cosmos** | `spawn a comet` · `create a black hole` · `a black hole orbits the moon` · `trigger a supernova` · `strike the planet with an asteroid` · `add auroras` |
 | **Sandbox** | `what if gravity was 10x?` · `what if oxygen disappeared?` · `what if dinosaurs survived?` · `what if Earth had rings?` |
 | **Time** | `accelerate time` · `advance one million years` · `pause` · `resume` |
@@ -119,7 +130,8 @@ sentence ─▶ interpreter ─▶ intent {verb, params} ─▶ game.exec ─▶
 | `src/state.js` | World State | single source of truth, undo/redo history, pronoun memory, save/load |
 | `src/interpreter.js` | Interpreter | sentence → `intent`; **optional LLM adapter emits the same intent shape** |
 | `src/sim.js` | Simulation | time, orbits, life evolution, civilization tiers, events |
-| `src/render.js` | Renderer | camera + per-scale scenes; procedural **spherical** planets via orthographic column sampling |
+| `src/render.js` | Renderer | low-res **pixel backbuffer** (nearest-neighbour upscale); pixel-3D space scenes; procedural **spherical** planets via orthographic column sampling |
+| `src/surface.js` | Renderer (God Eye) | top-down 2D biome **tilemap** generated from planet seed/climate; baked static layers + live water/fire/units; surface god-powers |
 | `src/audio.js` | — | generative Web Audio ambient + event tones (no asset files) |
 | `src/companion.js` | Companion | calm OS-style readouts and the live status panel |
 | `src/ui.js` | — | autocomplete suggestion bar + saved-universe browser panel |
@@ -157,6 +169,9 @@ node test/smoke.mjs      # requires playwright + a chromium build
 
 **Done**
 - Void → prompt → progressive genesis
+- Pixel-art revamp: low-res nearest-neighbour backbuffer across the whole game
+- Two macro-views: pixel-3D **Space** and top-down 2D **God Eye** surface tilemap
+- God Eye god-powers: forests (green/autumn/blossom/pine/jungle), mountains, flood/drain, desert, snow, wildfire (spreads), villages, wandering wildlife — with regions (north/south/east/west)
 - Procedural 3D-shaded planets, rings, moons, atmosphere, day/night, weather, auroras
 - Full zoom ladder (quantum → universe), each a distinct scene
 - Deep deterministic interpreter + pronoun memory + autocomplete + LLM seam

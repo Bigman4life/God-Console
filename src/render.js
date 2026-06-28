@@ -6,7 +6,10 @@
   'use strict';
   const U = GC.util;
 
-  let canvas, ctx, W, H, CX, CY, DPR = 1;
+  // viewCanvas = on-screen; buffer = low-res pixel backbuffer (everything
+  // draws into it, then we upscale with nearest-neighbour for the pixel look).
+  let viewCanvas, vctx, buffer, ctx, W, H, CX, CY, VW, VH, DPR = 1;
+  const BUF_H = 380;            // logical pixel-art vertical resolution
   const particles = [];
   let bgStars = [];
   let nebula = [];
@@ -14,19 +17,27 @@
   const R = {};
 
   R.init = function (cv) {
-    canvas = cv; ctx = canvas.getContext('2d');
+    viewCanvas = cv; vctx = viewCanvas.getContext('2d');
+    buffer = document.createElement('canvas'); ctx = buffer.getContext('2d');
     R.resize();
     addEventListener('resize', R.resize);
   };
   R.resize = function () {
     DPR = Math.min(2, window.devicePixelRatio || 1);
-    W = innerWidth; H = innerHeight;
-    canvas.width = W * DPR; canvas.height = H * DPR;
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    VW = innerWidth; VH = innerHeight;
+    viewCanvas.width = VW * DPR; viewCanvas.height = VH * DPR;
+    viewCanvas.style.width = VW + 'px'; viewCanvas.style.height = VH + 'px';
+    vctx.imageSmoothingEnabled = false;
+    // low-res buffer keeps the on-screen aspect ratio
+    H = BUF_H; W = Math.round((VW / VH) * BUF_H);
+    buffer.width = W; buffer.height = H;
+    ctx.imageSmoothingEnabled = false;
     CX = W / 2; CY = H / 2;
     makeBgStars(); makeNebula();
   };
+
+  R.W = () => W; R.H = () => H; R.center = () => ({ x: CX, y: CY });
+  R.toBuf = (sx, sy) => ({ x: sx / VW * W, y: sy / VH * H }); // screen->buffer
 
   function makeBgStars() {
     bgStars = [];
@@ -36,15 +47,62 @@
       bgStars.push({ x: rng(), y: rng(), z: rng.range(0.2, 1), tw: rng.range(0, U.TAU), hue: rng() < 0.1 ? rng.range(180, 260) : 0 });
     }
   }
+  let swirls = [], farGalaxies = [], asteroids = [];
   function makeNebula() {
-    nebula = [];
+    nebula = []; swirls = []; farGalaxies = []; asteroids = [];
     const rng = U.makeRng(777);
     for (let i = 0; i < 5; i++) {
       nebula.push({
         x: rng(), y: rng(), r: rng.range(0.3, 0.7),
-        c: U.hsl(rng.range(200, 320), 0.6, 0.5), a: rng.range(0.04, 0.10),
+        c: U.hsl(rng.range(200, 320), 0.6, 0.5), a: rng.range(0.05, 0.12),
       });
     }
+    // swirling nebula filaments (drawn as chains of pixels along a spiral)
+    for (let i = 0; i < 7; i++) {
+      swirls.push({
+        x: rng(), y: rng(), len: rng.range(0.4, 1.1), curl: rng.range(-2.4, 2.4),
+        ang: rng.range(0, U.TAU), hue: rng.range(200, 320), a: rng.range(0.10, 0.22),
+        scale: rng.range(0.18, 0.4),
+      });
+    }
+    // distant background galaxies (pixel spirals)
+    for (let i = 0; i < 4; i++) {
+      farGalaxies.push({ x: rng(), y: rng(), r: rng.range(26, 54), hue: rng.range(195, 320), spin: rng.range(0, U.TAU), flip: rng.sign() });
+    }
+    // drifting asteroids
+    for (let i = 0; i < 16; i++) {
+      asteroids.push({ x: rng(), y: rng(), s: rng.range(2, 6), vx: rng.range(-3, 3), vy: rng.range(-2, 2), shade: rng.range(0.25, 0.6), seed: rng.int(0, 9999) });
+    }
+  }
+
+  function drawFarGalaxy(cx, cy, r, hue, spin, flip) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(spin); ctx.scale(1, 0.45 * flip);
+    const rng = U.makeRng((hue * 31 + r) | 0);
+    for (let i = 0; i < 90; i++) {
+      const arm = i % 2;
+      const d = Math.pow(rng(), 0.5) * r;
+      const a = (arm / 2) * U.TAU + d * 0.05 + rng.range(-0.2, 0.2);
+      const x = Math.cos(a) * d, y = Math.sin(a) * d;
+      const br = 0.5 + 0.5 * (1 - d / r);
+      ctx.fillStyle = U.rgbStr(U.hsl(hue + rng.range(-15, 40), 0.5, 0.72), br * 0.8);
+      ctx.fillRect(x | 0, y | 0, 1, 1);
+    }
+    const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.5);
+    cg.addColorStop(0, U.rgbStr(U.hsl(hue, 0.4, 0.85), 0.7)); cg.addColorStop(1, U.rgbStr(U.hsl(hue, 0.4, 0.7), 0));
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(0, 0, r * 0.5, 0, U.TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawAsteroid(x, y, s, shade, seed) {
+    const rng = U.makeRng(seed);
+    const base = U.shade([120, 112, 104], -shade);
+    for (let i = 0; i < 6; i++) {
+      const px = x + rng.int(-s, s), py = y + rng.int(-s, s);
+      ctx.fillStyle = U.rgbStr(U.shade(base, rng.range(-0.2, 0.2)));
+      ctx.fillRect(px | 0, py | 0, 2, 2);
+    }
+    ctx.fillStyle = U.rgbStr(U.shade(base, 0.35), 0.8);
+    ctx.fillRect((x - s * 0.4) | 0, (y - s * 0.4) | 0, 1, 1);
   }
 
   /* ---- particles (genesis & debris) ---- */
@@ -341,14 +399,19 @@
     }
     ctx.restore();
 
-    // atmosphere rim
+    // atmosphere rim — bright pixel halo (the glowing edge in the reference)
     if (p.atmosphere > 0.05) {
-      const atmC = U.mix([150, 195, 255], U.hexRgb(p.oceanColor), 0.2);
-      const ag = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.14);
+      const atmC = U.mix([150, 205, 255], U.hexRgb(p.oceanColor), 0.15);
+      const ag = ctx.createRadialGradient(cx, cy, r * 0.86, cx, cy, r * 1.22);
       ag.addColorStop(0, U.rgbStr(atmC, 0));
-      ag.addColorStop(0.6, U.rgbStr(atmC, 0.18 * p.atmosphere));
+      ag.addColorStop(0.62, U.rgbStr(atmC, 0.10 * p.atmosphere));
+      ag.addColorStop(0.86, U.rgbStr(atmC, 0.5 * p.atmosphere));
       ag.addColorStop(1, U.rgbStr(atmC, 0));
-      ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, cy, r * 1.14, 0, U.TAU); ctx.fill();
+      ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, cy, r * 1.22, 0, U.TAU); ctx.fill();
+      // crisp bright ring on the lit limb
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = U.rgbStr(U.shade(atmC, 0.35), 0.7 * p.atmosphere);
+      ctx.beginPath(); ctx.arc(cx, cy, r + 1, 0, U.TAU); ctx.stroke();
     }
     // life halo
     if (p.life && p.life.present) {
@@ -386,7 +449,8 @@
   }
 
   /* ---- backgrounds ---- */
-  function drawSpaceBg(tint, t) {
+  function drawSpaceBg(tint, t, opts) {
+    opts = opts || {};
     const [r, g, b] = tint || [6, 8, 16];
     const grd = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(W, H) * 0.85);
     grd.addColorStop(0, `rgb(${r + 5},${g + 6},${b + 10})`);
@@ -398,11 +462,37 @@
       ng.addColorStop(1, U.rgbStr(nb.c, 0));
       ctx.fillStyle = ng; ctx.fillRect(0, 0, W, H);
     }
+    // swirling nebula filaments (pixel chains)
+    for (const sw of swirls) {
+      const steps = Math.floor(sw.len * 90);
+      const ox = sw.x * W, oy = sw.y * H, rad = sw.scale * Math.min(W, H);
+      for (let i = 0; i < steps; i++) {
+        const f = i / steps;
+        const a = sw.ang + f * sw.curl + t * 0.02;
+        const rr = rad * f;
+        const x = ox + Math.cos(a) * rr, y = oy + Math.sin(a) * rr * 0.7;
+        const al = sw.a * (1 - f);
+        ctx.fillStyle = U.rgbStr(U.hsl(sw.hue + f * 30, 0.6, 0.6), al);
+        ctx.fillRect(x | 0, y | 0, 2, 2);
+        ctx.fillStyle = U.rgbStr(U.hsl(sw.hue + f * 30, 0.6, 0.75), al * 0.6);
+        ctx.fillRect((x + 1) | 0, (y - 1) | 0, 1, 1);
+      }
+    }
+    if (opts.galaxies) for (const fg of farGalaxies) drawFarGalaxy(fg.x * W, fg.y * H, fg.r, fg.hue, fg.spin + t * 0.01, fg.flip);
+    if (opts.asteroids) for (const a of asteroids) {
+      const x = (a.x * W + a.vx * t) % W, y = (a.y * H + a.vy * t) % H;
+      drawAsteroid((x + W) % W, (y + H) % H, a.s, a.shade, a.seed);
+    }
     for (const s of bgStars) {
-      const a = 0.35 + 0.65 * Math.abs(Math.sin(s.tw + t * 1.6)) * s.z;
-      ctx.fillStyle = s.hue ? U.rgbStr(U.hsl(s.hue, 0.5, 0.8), a) : `rgba(255,255,255,${a})`;
-      const sz = s.z * 1.7;
-      ctx.fillRect(s.x * W, s.y * H, sz, sz);
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(s.tw + t * 1.6)) * s.z;
+      ctx.fillStyle = s.hue ? U.rgbStr(U.hsl(s.hue, 0.5, 0.85), tw) : `rgba(255,255,255,${tw})`;
+      const sz = s.z > 0.85 ? 2 : 1;
+      ctx.fillRect((s.x * W) | 0, (s.y * H) | 0, sz, sz);
+      if (s.z > 0.92) { // bright stars get a + sparkle
+        ctx.fillStyle = `rgba(255,255,255,${tw * 0.5})`;
+        ctx.fillRect((s.x * W) | 0, (s.y * H - 1) | 0, 1, 3);
+        ctx.fillRect((s.x * W - 1) | 0, (s.y * H) | 0, 3, 1);
+      }
     }
   }
 
@@ -411,7 +501,7 @@
      ==================================================================== */
   function scenePlanet(W_, t) {
     const p = W_.planet;
-    drawSpaceBg(p.skyTint, t);
+    drawSpaceBg(p.skyTint, t, { galaxies: true, asteroids: true });
     const bh = W_.blackHole;
     // the star (or its replacement), off to the side
     if (bh && bh.mode === 'star') drawBlackHole(CX - W * 0.34, CY - H * 0.3, bh.r || 30, t);
@@ -699,6 +789,12 @@
   };
   R.endGenesis = function () { if (genesis) genesis.glow = 0; setTimeout(() => genesis = null, 1500); };
 
+  function blit() {
+    vctx.imageSmoothingEnabled = false;
+    vctx.clearRect(0, 0, viewCanvas.width, viewCanvas.height);
+    vctx.drawImage(buffer, 0, 0, viewCanvas.width, viewCanvas.height);
+  }
+
   /* ---- main draw ---- */
   let lastT = 0;
   R.draw = function (now) {
@@ -715,13 +811,26 @@
         ctx.fillRect(s.x * W, s.y * H, 1, 1);
       }
       drawParticles();
+      blit();
       return;
     }
 
-    // camera transition (zoom punch + fade)
     const cam = W_.cam;
     cam.transition = U.clamp(cam.transition + 0.045, 0, 1);
     const tr = U.smooth(cam.transition);
+
+    // ---- GOD EYE: top-down 2D surface tilemap ----
+    if (W_.view === 'surface' && GC.surface) {
+      GC.surface.render(ctx, { W, H, t, tr, dir: cam.dir });
+      drawParticles();
+      drawShockwaves(); drawFlyers();
+      if (flash > 0.001) { ctx.fillStyle = `rgba(255,250,240,${flash * 0.6})`; ctx.fillRect(0, 0, W, H); flash *= 0.88; }
+      vignette();
+      blit();
+      return;
+    }
+
+    // ---- SPACE: pixel-3D scenes ----
     const scaleFrom = cam.dir < 0 ? 1.7 : 0.62;
     const s = U.lerp(scaleFrom, 1, tr);
     ctx.save();
@@ -745,25 +854,26 @@
     }
     drawParticles();
 
-    // cosmic effects (screen space, above scene)
+    // cosmic effects (above scene)
     drawShockwaves();
     drawFlyers();
-    // ambient comets when looking at space
-    if (cam.level >= 9 && Math.random() < 0.003) R.spawnComet(false);
+    if (cam.level >= 9 && Math.random() < 0.005) R.spawnComet(false);
     if (cam.level >= 9) drawComets(t);
 
-    // global flash (supernova / impact)
     if (flash > 0.001) {
       ctx.fillStyle = `rgba(255,250,240,${flash * 0.6})`;
       ctx.fillRect(0, 0, W, H);
       flash *= 0.88;
     }
-
-    // vignette
-    const vg = ctx.createRadialGradient(CX, CY, Math.min(W, H) * 0.4, CX, CY, Math.max(W, H) * 0.75);
-    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
-    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    vignette();
+    blit();
   };
+
+  function vignette() {
+    const vg = ctx.createRadialGradient(CX, CY, Math.min(W, H) * 0.42, CX, CY, Math.max(W, H) * 0.72);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
 
   R.setLevel = function (newLevel) {
     const cam = GC.World.cam;

@@ -27,6 +27,13 @@
 
   /* The deterministic parser. Returns {verb, params}. */
   I.parse = function (raw) {
+    const it = parseRaw(raw);
+    const reg = regionFrom(raw.toLowerCase());
+    if (reg) { it.params = it.params || {}; if (it.params.region === undefined) it.params.region = reg; }
+    return it;
+  };
+
+  function parseRaw(raw) {
     const t = raw.toLowerCase().trim();
     const has = (...w) => w.some((x) => t.includes(x));
     const W = GC.World;
@@ -48,6 +55,23 @@
     if (has('comet', 'shooting star')) return { verb: 'comet' };
     if (has('asteroid', 'meteor', 'impact', 'strike the planet')) return { verb: 'asteroid' };
     if (has('aurora', 'northern lights')) return { verb: 'aurora', params: { on: !has('remove', 'no ') } };
+
+    // view transitions: space <-> God Eye (surface)
+    if (has('descend', 'go to surface', 'enter the surface', 'land on', 'god eye', 'surface view', 'zoom to surface', 'to the surface', 'on the surface'))
+      return { verb: 'descend' };
+    if (has('ascend', 'return to space', 'back to space', 'leave the surface', 'into orbit', 'back to orbit', 'zoom to space'))
+      return { verb: 'ascend' };
+
+    // surface (God Eye) terrain powers  (fire before forest so "set fire to the forest" burns)
+    if (has('set fire', 'wildfire', 'burn', 'ignite')) return { verb: 'fire' };
+    if (has('deforest', 'cut down', 'clear the forest', 'clear the tree', 'chop down')) return { verb: 'deforest' };
+    if (has('forest', 'grove', 'woods', 'orchard', 'plant', 'tree', 'jungle')) return { verb: 'forest', params: treeParam(t) };
+    if (has('mountain', 'raise the land', 'raise terrain', 'raise mountains', 'hills', 'highlands')) return { verb: 'mountains' };
+    if (has('flatten', 'level the land', 'lower the land')) return { verb: 'flatten' };
+    if (has('drain', 'dry up', 'lower the sea', 'recede the')) return { verb: 'drain' };
+    if (has('flood', 'raise the sea', 'raise water', 'lake', 'river', 'sea level')) return { verb: 'flood' };
+    if (has('village', 'settlement', 'town', 'build a city', 'spawn people', 'spawn humans')) return { verb: 'village' };
+    if (has('animal', 'wildlife', 'critter', 'beast', 'fauna', 'herd')) return { verb: 'animals' };
 
     // timelines / duplication
     if (has('branch')) return { verb: 'branch', params: { label: nameAfter(t, 'branch') } };
@@ -152,6 +176,25 @@
 
     return { verb: 'unknown', params: { raw } };
   };
+
+  // tree-type words -> surface TR ids (1 green,2 autumn,3 blossom,4 pine,5 jungle,6 dead)
+  function treeParam(t) {
+    if (/(pine|conifer|fir|spruce|evergreen)/.test(t)) return { tree: 4 };
+    if (/(autumn|orange|maple|fall )/.test(t)) return { tree: 2 };
+    if (/(cherry|blossom|sakura|pink)/.test(t)) return { tree: 3 };
+    if (/(jungle|tropical|palm)/.test(t)) return { tree: 5 };
+    if (/(dead|charred|barren)/.test(t)) return { tree: 6 };
+    if (/green/.test(t)) return { tree: 1 };
+    return {};
+  }
+  function regionFrom(t) {
+    if (/\bnorth/.test(t)) return 'north';
+    if (/\bsouth/.test(t)) return 'south';
+    if (/\beast/.test(t)) return 'east';
+    if (/\bwest/.test(t)) return 'west';
+    if (/(center|centre|middle|here)/.test(t)) return 'center';
+    return null;
+  }
 
   function nameAfter(t, kw) {
     const i = t.indexOf(kw);

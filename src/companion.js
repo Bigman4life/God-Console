@@ -47,10 +47,24 @@
     const W = GC.World;
     if (!W.born) { if (statusEl) statusEl.innerHTML = ''; if (zoomEl) zoomEl.textContent = ''; return; }
     const p = W.planet;
-    if (zoomEl) zoomEl.textContent = '⟸  ' + ZOOM_LEVELS[U.clamp(W.cam.level, 0, 12)] + '  ⟹';
-    const civ = p.civ.present ? `${p.civ.age} · ${U.fmt(p.civ.population)}` : (p.life.present ? 'pre-sentient' : 'none');
     const ts = W.time.paused || W.time.scale === 0 ? 'paused'
       : W.time.scale <= 1 ? '1×' : U.fmt(W.time.scale) + ' yr/s';
+
+    if (W.view === 'surface') {
+      if (zoomEl) zoomEl.textContent = '◱  GOD EYE — ' + p.climate + ' surface';
+      const s = GC.surface ? GC.surface.stats() : { trees: 0, water: 0, villages: 0, units: 0 };
+      if (statusEl) statusEl.innerHTML =
+        `view <b>God Eye</b><br>` +
+        `time <b>${ts}</b><br>` +
+        `forests <b>${U.fmt(s.trees)}</b><br>` +
+        `water <b>${U.fmt(s.water)}</b><br>` +
+        `villages <b>${s.villages}</b><br>` +
+        `wildlife <b>${s.units}</b>`;
+      return;
+    }
+
+    if (zoomEl) zoomEl.textContent = '⟸  ' + ZOOM_LEVELS[U.clamp(W.cam.level, 0, 12)] + '  ⟹';
+    const civ = p.civ.present ? `${p.civ.age} · ${U.fmt(p.civ.population)}` : (p.life.present ? 'pre-sentient' : 'none');
     if (statusEl) statusEl.innerHTML =
       `gravity <b>${p.gravity}G</b><br>` +
       `time <b>${ts}</b><br>` +

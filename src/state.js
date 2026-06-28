@@ -84,6 +84,7 @@
       galaxySeed: seed ^ 0xabcdef,
       universeSeed: seed ^ 0x0f0f0f0,
       blackHole: null,
+      view: 'space',          // 'space' (3D pixel) | 'surface' (God Eye 2D tilemap)
       it: 'planet',
       events: [],
     });
